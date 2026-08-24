@@ -71,22 +71,22 @@ cd screen-use
 pip install -r requirements.txt
 ```
 
-### 作为 Kimi 插件（Kimi CLI，推荐）
+### As a Kimi CLI plugin (recommended)
 
-一行命令接入，Kimi 立即获得 14 个桌面操作工具：
+One command — Kimi instantly gets all 14 desktop tools:
 
 ```bash
-kimi mcp add --transport stdio screen-use -- <python.exe路径> -m screen_use.mcp_server
-kimi mcp test screen-use   # 验证连接
+kimi mcp add --transport stdio screen-use -- <path-to-python.exe> -m screen_use.mcp_server
+kimi mcp test screen-use   # verify the connection
 ```
 
-再装一个使用策略 skill（可选但推荐），教 Kimi 最优工具选择：
+Optionally install the bundled usage-strategy skill, which teaches Kimi the optimal tool-selection playbook:
 
 ```bash
 mkdir -p ~/.kimi/skills/screen-use && cp skills/screen-use/SKILL.md ~/.kimi/skills/screen-use/
 ```
 
-接入后直接对 Kimi 说：*"打开计算器算 123 × 456"* 或 *"把记事本的内容读给我"*。
+Then just tell Kimi: *"Open Calculator and compute 123 × 456"* or *"Read what's in my Notepad"*.
 
 ### As a generic MCP Server
 
