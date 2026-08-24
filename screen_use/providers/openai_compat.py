@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 
-from openai import APIConnectionError, OpenAI
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 from screen_use.config import Settings
 from screen_use.providers.base import VisionProvider
@@ -56,9 +56,9 @@ class OpenAICompatProvider(VisionProvider):
 
     def _chat_with_image(self, prompt: str, image_base64: str) -> str:
         kwargs: dict = {}
-        # Ollama 的思考模型（qwen3 等）：关闭 thinking，避免思考耗尽 max_tokens 导致输出为空
+        # Ollama：关 thinking + 扩大上下文窗口（默认 4096，图片+prompt+思考容易爆）
         if self._settings.vision_provider == "ollama":
-            kwargs["extra_body"] = {"think": False}
+            kwargs["extra_body"] = {"think": False, "options": {"num_ctx": 16384}}
         try:
             resp = self._client.chat.completions.create(
                 model=self._settings.effective_model,
@@ -75,7 +75,7 @@ class OpenAICompatProvider(VisionProvider):
                     }
                 ],
                 temperature=0,
-                max_tokens=8192,  # 思考模型可能在推理上消耗大量 token，给足余量
+                max_tokens=8192,  # num_ctx 16384 下的安全值；思考型模型会先输出长推理再给 JSON
                 **kwargs,
             )
         except APIConnectionError as e:
@@ -83,6 +83,11 @@ class OpenAICompatProvider(VisionProvider):
                 f"VLM 连接失败（{self._settings.effective_base_url}）："
                 "请确认 Ollama 已启动或 API 配置正确"
             ) from e
+        except APIStatusError as e:
+            if e.status_code >= 500:
+                # 服务端错误（上下文溢出/runner 异常等）按可重试处理
+                raise ValueError(f"VLM 服务端错误 {e.status_code}") from e
+            raise
         choice = resp.choices[0]
         content = choice.message.content or ""
         if not content.strip():

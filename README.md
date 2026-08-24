@@ -83,6 +83,14 @@ Add to `claude_desktop_config.json` (or any MCP-compatible agent's config):
 }
 ```
 
+Kimi CLI 一行接入：
+
+```bash
+kimi mcp add --transport stdio screen-use -- <python.exe路径> -m screen_use.mcp_server
+```
+
+Kimi CLI also works with a user-level skill (`~/.kimi/skills/screen-use/SKILL.md`) that teaches the agent the optimal tool-selection strategy.
+
 Then just tell your agent: *"Open Calculator and compute 123 × 456."*
 
 ### As a Python SDK
