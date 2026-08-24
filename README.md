@@ -9,9 +9,16 @@ Give any AI Agent eyes 👀 and hands 🖐️ on Windows — let Claude, Kimi, C
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
 
-![demo](assets/demo.gif)
+![demo](assets/demo_cross_app.gif)
 
-> 👆 *An AI agent computing 123 + 456 on the real Windows Calculator — locating and clicking every button by itself. Zero hardcoded selectors.*
+> 👆 *An AI agent computing 123 + 456 in Calculator, then pasting the result into Notepad — two apps, zero hardcoded selectors, fully autonomous.*
+
+<details>
+<summary>🎬 More: single-app precision demo</summary>
+
+![calculator demo](assets/demo.gif)
+
+</details>
 
 ## Why
 

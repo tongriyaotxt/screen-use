@@ -20,14 +20,18 @@ from screen_use.tools import ScreenUse
 auto.SetGlobalSearchTimeout(5)
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "assets", "demo_cross_app.gif")
-SCRATCH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scratch_demo.txt"))
+SCRATCH = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", f"scratch_demo_{int(time.time())}.txt"
+))
 FPS = 4
 GIF_WIDTH = 800
 
-# 画布布局（物理像素）
+# 画布布局（物理像素）。记事本只取正文区域（裁掉含用户文件名的标签栏）
 CANVAS = (980, 560)
-NOTEPAD_POS = (20, 20, 560, 500)   # x, y, w, h
-CALC_POS = (620, 20, 340, 520)
+NOTEPAD_POS = (20, 20)          # 记事本窗口移动到此处
+NOTEPAD_CROP_TOP = 130          # 裁掉标题栏+标签栏+工具栏
+NOTEPAD_SHOW = (560, 380)       # 画布上展示的记事本区域
+CALC_POS = (600, 20)
 BG = (24, 24, 32)
 
 _state = {"calc_rect": None, "np_rect": None}
@@ -42,7 +46,6 @@ def find_notepad():
             pass
     return None
 
-
 def grab(sct, rect):
     raw = sct.grab({"left": rect[0], "top": rect[1], "width": rect[2], "height": rect[3]})
     return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
@@ -50,6 +53,20 @@ def grab(sct, rect):
 
 def main() -> None:
     tools = ScreenUse()
+
+    # 0. 预清理：关闭上次运行可能残留的 scratch 标签页
+    while True:
+        leftover = find_notepad()
+        if not leftover:
+            break
+        leftover.SetActive()
+        time.sleep(0.3)
+        leftover.GetWindowPattern().Close()
+        time.sleep(0.8)
+        r = tools.click_element("Don't save")
+        if not r.get("found"):
+            tools.click_element("不保存")
+        time.sleep(0.5)
 
     # 1. 准备记事本（隔离草稿文件），并摆位
     with open(SCRATCH, "w", encoding="ascii") as f:
@@ -64,7 +81,8 @@ def main() -> None:
     tp.Move(NOTEPAD_POS[0], NOTEPAD_POS[1])
     time.sleep(0.5)
     nr = np_win.BoundingRectangle
-    _state["np_rect"] = (nr.left, nr.top, nr.width(), nr.height())
+    # 只取正文区域：从窗口下方裁掉顶部标签栏
+    _state["np_rect"] = (nr.left, nr.top + NOTEPAD_CROP_TOP, nr.width(), nr.height() - NOTEPAD_CROP_TOP)
 
     # 光标移到文本末尾
     doc = np_win.DocumentControl(searchDepth=10)
@@ -81,7 +99,9 @@ def main() -> None:
             while not stop.is_set():
                 canvas = Image.new("RGB", CANVAS, BG)
                 if _state["np_rect"]:
-                    canvas.paste(grab(sct, _state["np_rect"]), (_state["np_rect"][0], _state["np_rect"][1]))
+                    img = grab(sct, _state["np_rect"])
+                    img = img.crop((0, 0, min(NOTEPAD_SHOW[0], img.width), min(NOTEPAD_SHOW[1], img.height)))
+                    canvas.paste(img, (20, 20))
                 if _state["calc_rect"]:
                     canvas.paste(grab(sct, _state["calc_rect"]), (_state["calc_rect"][0], _state["calc_rect"][1]))
                 frames.append(canvas)
@@ -116,10 +136,10 @@ def main() -> None:
     # 5. 切回记事本，粘贴
     np_win.SetActive()
     time.sleep(0.8)
-    tools.click(NOTEPAD_POS[0] + 200, NOTEPAD_POS[1] + 120)
+    tools.click(NOTEPAD_POS[0] + 200, NOTEPAD_POS[1] + NOTEPAD_CROP_TOP + 80)
     tools.hotkey("ctrl", "end")
     tools.hotkey("ctrl", "v")
-    time.sleep(1.5)
+    time.sleep(1.2)
 
     stop.set()
     t.join()
@@ -141,8 +161,14 @@ def main() -> None:
     print(f"saved {OUT}: {len(frames)} frames, {os.path.getsize(OUT)//1024} KB")
 
     # 8. 清理
-    find_notepad().GetWindowPattern().Close()
-    time.sleep(1)
+    win = find_notepad()
+    if win:
+        win.GetWindowPattern().Close()
+        time.sleep(1)
+        # 处理可能出现的保存对话框
+        r = tools.click_element("Don't save")
+        if not r.get("found"):
+            tools.click_element("不保存")
     if os.path.exists(SCRATCH):
         os.remove(SCRATCH)
     print("✅ 跨应用验证通过: 123 + 456 = 579 已粘贴进记事本")
