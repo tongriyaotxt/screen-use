@@ -1,0 +1,11 @@
+pyautogui
+uiautomation
+mss
+mcp[cli]
+python-dotenv
+pydantic
+pydantic-settings
+openai
+pillow
+pytest
+pyperclip

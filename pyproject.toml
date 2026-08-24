@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "screen-use"
+version = "0.1.0"
+description = "browser-use, but for the entire desktop — give any AI Agent eyes and hands on Windows"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "pyautogui",
+    "uiautomation",
+    "mss",
+    "mcp[cli]",
+    "python-dotenv",
+    "pydantic",
+    "pydantic-settings",
+    "openai",
+    "pillow",
+    "pyperclip",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+screen-use-mcp = "screen_use.mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["screen_use*"]
