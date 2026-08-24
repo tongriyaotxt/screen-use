@@ -107,6 +107,15 @@ def read_screen(question: str) -> str:
     return tools.read_screen(question)
 
 
+@mcp.tool()
+def run_task(goal: str, max_steps: int = 20) -> str:
+    """视觉行为循环：自主完成一个桌面任务（如 "打开计算器算 25*4"）。
+
+    循环执行 观察截图→VLM决策→动作→验证，直到完成或达到步数上限。需要配置 VLM。
+    """
+    return json.dumps(tools.run_task(goal, max_steps=max_steps), ensure_ascii=False)
+
+
 def main() -> None:
     mcp.run()
 

@@ -55,6 +55,10 @@ class OpenAICompatProvider(VisionProvider):
         )
 
     def _chat_with_image(self, prompt: str, image_base64: str) -> str:
+        kwargs: dict = {}
+        # Ollama 的思考模型（qwen3 等）：关闭 thinking，避免思考耗尽 max_tokens 导致输出为空
+        if self._settings.vision_provider == "ollama":
+            kwargs["extra_body"] = {"think": False}
         try:
             resp = self._client.chat.completions.create(
                 model=self._settings.effective_model,
@@ -71,7 +75,8 @@ class OpenAICompatProvider(VisionProvider):
                     }
                 ],
                 temperature=0,
-                max_tokens=1024,
+                max_tokens=4096,
+                **kwargs,
             )
         except APIConnectionError as e:
             raise RuntimeError(

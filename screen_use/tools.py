@@ -10,6 +10,7 @@ from typing import Callable
 
 from screen_use.actions.executor import Executor
 from screen_use.config import Settings, get_settings
+from screen_use.memory import ExperienceStore
 from screen_use.perception import screen, som, uia_tree
 from screen_use.perception.uia_tree import UIElement
 from screen_use.providers.base import VisionProvider
@@ -32,11 +33,13 @@ class ScreenUse:
         settings: Settings | None = None,
         provider: VisionProvider | None = None,
         confirm_callback: Callable[[str], bool] | None = None,
+        memory: ExperienceStore | None = None,
     ):
         self.settings = settings or get_settings()
         self.executor = Executor(dry_run=dry_run)
         self.confirm_callback = confirm_callback
         self._provider = provider
+        self.memory = memory or ExperienceStore()  # 元学习：经验与词汇记忆
         self._elements: list[UIElement] = []  # 最近一次 list_ui_elements 的缓存
 
     # ---- Provider 懒加载 ----
@@ -121,16 +124,28 @@ class ScreenUse:
     # ================= 高层工具（策略链） =================
 
     def find_element(self, description: str) -> dict:
-        """按自然语言描述定位元素。策略链：UIA 文本匹配 → SoM + VLM。
+        """按自然语言描述定位元素。
 
-        返回 {found, method, element}；method ∈ {"uia_exact", "uia_fuzzy", "vlm"}。
+        策略链：
+          0. 元学习词汇映射（以往任务学到的 描述→控件名）
+          1. UIA 文本匹配（零模型依赖）
+          2. SoM + VLM
+        返回 {found, method, element}。
         """
         elements = self.list_ui_elements_raw()
+
+        # 第 0 级：词汇记忆（之前成功定位过的描述直接命中）
+        learned = self.memory.recall_mapping(description)
+        if learned:
+            for el in elements:
+                if el.name == learned["name"]:
+                    return {"found": True, "method": "learned", "element": el.to_dict()}
 
         # 第 1 级：UIA 文本匹配（零模型依赖）
         hit = self._uia_match(elements, description)
         if hit is not None:
             el, method = hit
+            self.memory.learn_mapping(description, el.name, el.control_type)
             return {"found": True, "method": method, "element": el.to_dict()}
 
         # 第 2 级：SoM + VLM
@@ -154,6 +169,7 @@ class ScreenUse:
             return {"found": False, "method": "vlm", "error": str(e)}
         for el in elements:
             if el.id == picked_id:
+                self.memory.learn_mapping(description, el.name, el.control_type)
                 return {"found": True, "method": "vlm", "element": el.to_dict()}
         return {"found": False, "method": "vlm", "error": f"VLM 认为不存在 {description!r}"}
 
@@ -198,3 +214,14 @@ class ScreenUse:
             self.settings.screenshot_max_size, self.settings.screenshot_jpeg_quality
         )
         return provider.ask_about_screen(b64, question)
+
+    # ================= 视觉行为循环 =================
+
+    def run_task(self, goal: str, max_steps: int = 20, on_step=None) -> dict:
+        """视觉行为循环：observe → think → act → verify，直到任务完成。
+
+        需要 VLM。on_step: 可选回调 fn(Step)，用于实时观察每一步。
+        """
+        from screen_use.agent import VisualLoop
+
+        return VisualLoop(self, max_steps=max_steps).run(goal, on_step=on_step).to_dict()

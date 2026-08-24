@@ -142,3 +142,30 @@ def test_read_screen_with_vlm():
         from PIL import Image
         mock_shot.return_value = Image.new("RGB", (800, 600), "white")
         assert "回答" in tools.read_screen("有什么？")
+
+
+# ---- 元学习：词汇映射（策略链第 0 级） ----
+
+def test_find_element_learned_mapping():
+    """第二次找同一描述时走 learned 路径，不再经过 UIA 匹配。"""
+    tools = _make_tools()
+    # 第一次：UIA 精确命中，同时学习映射
+    r1 = tools.find_element("确定")
+    assert r1["method"] == "uia_exact"
+    assert tools.memory.recall_mapping("确定")["name"] == "确定"
+    # 第二次：走 learned
+    r2 = tools.find_element("确定")
+    assert r2["method"] == "learned"
+    assert r2["element"]["id"] == 1
+
+
+def test_vlm_hit_learns_mapping():
+    """VLM 定位成功后也会学习映射。"""
+    provider = FakeProvider(pick=2)
+    tools = _make_tools(provider=provider, settings=_vlm_settings())
+    with patch("screen_use.tools.screen.screenshot") as mock_shot2:
+        from PIL import Image
+        mock_shot2.return_value = Image.new("RGB", (800, 600), "white")
+        result = tools.find_element("叉叉按钮")
+    assert result["method"] == "vlm"
+    assert tools.memory.recall_mapping("叉叉按钮")["name"] == "取消"

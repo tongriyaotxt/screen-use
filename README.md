@@ -32,8 +32,12 @@ Your Agent (Claude / Kimi / Cursor / custom)   ← does the planning
         ▼
 ┌─────────────────────────────────────────────┐
 │ screen-use                                  │
+│  Visual Loop ──► observe→think→act→verify   │
+│  Introspection──► difficulty playbook        │
+│  Meta-learning──► experience & vocab memory  │
 │  Perception ──► UIA tree + screenshots (SoM)│
 │  Locating   ──► strategy chain:             │
+│                 ⓪ learned vocab mapping     │
 │                 ① UIA text match (0 cost)   │
 │                 ② Set-of-Mark + VLM         │
 │  Action     ──► mouse / keyboard            │
@@ -85,11 +89,23 @@ shot = tools.screenshot(annotate=True) # Set-of-Mark annotated screenshot
 tools.click(500, 300)
 ```
 
-## Tools (13)
+## Autonomous task loop
+
+One call, full autonomy — the agent sees, decides, acts and self-corrects:
+
+```python
+tools.run_task("打开计算器，算 25 乘以 4")   # observe → think → act → verify
+```
+
+**Introspection (困难分类反思)**: when the loop gets stuck, it classifies the difficulty — *no effect / repeat loop / consecutive failures / missing elements / unexpected popup* — and reflects with a targeted prompt playbook, then adjusts strategy.
+
+**Meta-learning (元学习)**: successful runs are remembered. Similar past tasks are recalled as experience hints, and learned vocabulary mappings (e.g. "乘号" → `Multiply by`) become the strategy chain's new first level. It literally gets better the more you use it. Memory lives in `~/.screen_use/`.
+
+## Tools (14)
 
 **Atomic** (zero model dependency): `screenshot` · `list_ui_elements` · `click` · `double_click` · `right_click` · `click_element_id` · `type_text` · `hotkey` · `press` · `scroll`
 
-**High-level**: `find_element` (strategy-chain locating) · `click_element` (locate + click) · `read_screen` (VLM screen Q&A)
+**High-level**: `find_element` (strategy-chain locating) · `click_element` (locate + click) · `read_screen` (VLM screen Q&A) · `run_task` (autonomous visual loop)
 
 ## Vision model (optional)
 
@@ -112,8 +128,10 @@ Without any VLM configured, atomic tools and UIA matching still work fully.
 ## Roadmap
 
 - [x] UIA + SoM locating strategy chain
-- [x] MCP Server (13 tools)
+- [x] MCP Server (14 tools)
 - [x] Local VLM support (Ollama)
+- [x] Autonomous visual loop (`run_task`)
+- [x] Introspection playbook & meta-learning memory
 - [ ] `wait_for_element` / auto-verification primitives
 - [ ] Drag & drop
 - [ ] VLM raw-coordinate fallback + OpenCV template matching (UIA-blind apps)
@@ -125,7 +143,7 @@ Contributions welcome — see issues for good first tasks.
 ## Development
 
 ```bash
-pytest tests -q                        # 34 unit tests, no desktop/VLM needed
+pytest tests -q                        # 61 unit tests, no desktop/VLM needed
 python examples/demo_calculator.py     # end-to-end demo (real clicks!)
 python examples/mcp_client_demo.py     # MCP handshake + tool list
 ```
