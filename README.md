@@ -9,14 +9,18 @@ Give any AI Agent eyes 👀 and hands 🖐️ on Windows — let Claude, Kimi, C
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
 
-![demo](assets/demo_agent.gif)
+![demo](assets/demo_agent_cross.gif)
 
-> 👆 *The agent loop in action: given the goal in natural language, the VLM observes the screen, reasons step by step (left panel), and clicks the calculator by itself — 78 × 9 = 702, fully autonomous, zero selectors.*
+> 👆 *Cross-app autonomy: the agent reads the result from Calculator, activates Notepad, and types it in — every step decided by the VLM watching the screen (see the live thought stream at the bottom).*
 
 <details>
 <summary>🎬 More demos</summary>
 
-Cross-app: compute in Calculator → paste into Notepad:
+Single-app agent loop (VLM computes 78 × 9 by itself):
+
+![agent loop demo](assets/demo_agent.gif)
+
+Scripted cross-app (Calculator → Notepad):
 
 ![cross-app demo](assets/demo_cross_app.gif)
 
@@ -67,7 +71,24 @@ cd screen-use
 pip install -r requirements.txt
 ```
 
-### As an MCP Server (recommended)
+### 作为 Kimi 插件（Kimi CLI，推荐）
+
+一行命令接入，Kimi 立即获得 14 个桌面操作工具：
+
+```bash
+kimi mcp add --transport stdio screen-use -- <python.exe路径> -m screen_use.mcp_server
+kimi mcp test screen-use   # 验证连接
+```
+
+再装一个使用策略 skill（可选但推荐），教 Kimi 最优工具选择：
+
+```bash
+mkdir -p ~/.kimi/skills/screen-use && cp skills/screen-use/SKILL.md ~/.kimi/skills/screen-use/
+```
+
+接入后直接对 Kimi 说：*"打开计算器算 123 × 456"* 或 *"把记事本的内容读给我"*。
+
+### As a generic MCP Server
 
 Add to `claude_desktop_config.json` (or any MCP-compatible agent's config):
 
@@ -82,14 +103,6 @@ Add to `claude_desktop_config.json` (or any MCP-compatible agent's config):
   }
 }
 ```
-
-Kimi CLI 一行接入：
-
-```bash
-kimi mcp add --transport stdio screen-use -- <python.exe路径> -m screen_use.mcp_server
-```
-
-Kimi CLI also works with a user-level skill (`~/.kimi/skills/screen-use/SKILL.md`) that teaches the agent the optimal tool-selection strategy.
 
 Then just tell your agent: *"Open Calculator and compute 123 × 456."*
 
