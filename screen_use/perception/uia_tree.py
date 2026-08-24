@@ -26,7 +26,8 @@ INTERACTIVE_TYPES = {
     "DocumentControl",
 }
 
-MAX_ELEMENTS = 50
+MAX_ELEMENTS = 60
+MAX_WINDOWS = 5
 MAX_DEPTH = 12
 
 
@@ -39,6 +40,7 @@ class UIElement:
     control_type: str
     bbox: tuple[int, int, int, int]
     window_title: str = ""
+    window_handle: int = 0
     extra: dict = field(default_factory=dict)
 
     @property
@@ -76,30 +78,19 @@ def _is_valid(ctrl) -> bool:
         return False
 
 
-def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
-    """枚举前台窗口的可交互控件，按面积从小到大排序（小控件通常是精确目标）。
+def _safe_handle(ctrl) -> int:
+    try:
+        return ctrl.NativeWindowHandle
+    except Exception:
+        return -1
 
-    返回带稳定 id（1 起）的 UIElement 列表，id 在当前列表内唯一。
-    """
-    import uiautomation as auto
 
-    from screen_use.perception.screen import ensure_dpi_aware, screenshot
-
-    ensure_dpi_aware()
-
-    root = auto.GetForegroundControl()
-    if root is None:
-        # 前台无窗口时退化为桌面
-        root = auto.GetRootControl()
-    window_title = getattr(root, "Name", "") or ""
-
-    screen_w, screen_h = screenshot().size
-    screen_area = screen_w * screen_h
-
-    elements: list[UIElement] = []
+def _collect_from(root_ctrl, window_title: str, window_handle: int, screen_area: int,
+                  elements: list, budget: int) -> None:
+    """从某个窗口的控件树收集可交互元素（深度优先，受 budget 限制）。"""
 
     def walk(ctrl, depth: int) -> None:
-        if len(elements) >= max_elements or depth > MAX_DEPTH:
+        if len(elements) >= budget or depth > MAX_DEPTH:
             return
         try:
             ctype = ctrl.ControlTypeName
@@ -112,11 +103,12 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
             if area < screen_area * 0.9:  # 排除近全屏控件
                 elements.append(
                     UIElement(
-                        id=0,  # 排序后统一编号
+                        id=0,
                         name=(ctrl.Name or "").strip(),
                         control_type=ctype,
                         bbox=bbox,
                         window_title=window_title,
+                        window_handle=window_handle,
                     )
                 )
         try:
@@ -126,7 +118,54 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
         for child in children:
             walk(child, depth + 1)
 
-    walk(root, 0)
+    walk(root_ctrl, 0)
+
+
+def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
+    """枚举所有可见顶层窗口的可交互控件（前台窗口优先）。
+
+    多窗口任务时 agent 需要能看到非前台窗口的元素（点击即激活该窗口），
+    所以不只枚举前台。返回带稳定 id（1 起）的列表。
+    """
+    import uiautomation as auto
+
+    from screen_use.perception.screen import ensure_dpi_aware, screenshot
+
+    ensure_dpi_aware()
+
+    screen_w, screen_h = screenshot().size
+    screen_area = screen_w * screen_h
+
+    try:
+        fg = auto.GetForegroundControl()
+        fg_handle = fg.NativeWindowHandle if fg else 0
+    except Exception:
+        fg_handle = 0
+
+    # 收集可见顶层窗口，前台排最前
+    root = auto.GetRootControl()
+    windows = []
+    for w in root.GetChildren():
+        try:
+            if w.ControlTypeName != "WindowControl" or w.IsOffscreen:
+                continue
+            rect = w.BoundingRectangle
+            if rect.width() <= 0 or rect.height() <= 0:
+                continue
+            windows.append(w)
+        except Exception:
+            continue
+    windows.sort(key=lambda w: 0 if _safe_handle(w) == fg_handle else 1)
+
+    elements: list[UIElement] = []
+    for w in windows[:MAX_WINDOWS]:  # 前台优先，最多 5 个窗口
+        try:
+            title = (w.Name or "").strip() or "(无标题)"
+        except Exception:
+            title = "(无标题)"
+        _collect_from(w, title, _safe_handle(w), screen_area, elements, max_elements)
+        if len(elements) >= max_elements:
+            break
 
     # 小控件优先（更可能是精确目标），再去重（同名同位置）
     elements.sort(key=lambda e: e.area)

@@ -75,7 +75,7 @@ class OpenAICompatProvider(VisionProvider):
                     }
                 ],
                 temperature=0,
-                max_tokens=4096,
+                max_tokens=8192,  # 思考模型可能在推理上消耗大量 token，给足余量
                 **kwargs,
             )
         except APIConnectionError as e:
@@ -83,7 +83,19 @@ class OpenAICompatProvider(VisionProvider):
                 f"VLM 连接失败（{self._settings.effective_base_url}）："
                 "请确认 Ollama 已启动或 API 配置正确"
             ) from e
-        return resp.choices[0].message.content or ""
+        choice = resp.choices[0]
+        content = choice.message.content or ""
+        if not content.strip():
+            # 思考型模型可能把输出写进 reasoning 字段（think:false 在部分 Ollama 版本不生效）
+            reasoning = (
+                getattr(choice.message, "reasoning", None)
+                or getattr(choice.message, "reasoning_content", None)
+                or ""
+            )
+            if reasoning.strip():
+                return reasoning  # 交给上层从推理文本中提取 JSON
+            raise ValueError(f"VLM 返回空内容 (finish_reason={choice.finish_reason})")
+        return content
 
     def pick_element(self, image_base64: str, legend: str, goal: str) -> int:
         prompt = _PICK_PROMPT.format(legend=legend, goal=goal)

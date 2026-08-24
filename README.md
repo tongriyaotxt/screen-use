@@ -9,12 +9,18 @@ Give any AI Agent eyes 👀 and hands 🖐️ on Windows — let Claude, Kimi, C
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
 
-![demo](assets/demo_cross_app.gif)
+![demo](assets/demo_agent.gif)
 
-> 👆 *An AI agent computing 123 + 456 in Calculator, then pasting the result into Notepad — two apps, zero hardcoded selectors, fully autonomous.*
+> 👆 *The agent loop in action: given the goal in natural language, the VLM observes the screen, reasons step by step (left panel), and clicks the calculator by itself — 78 × 9 = 702, fully autonomous, zero selectors.*
 
 <details>
-<summary>🎬 More: single-app precision demo</summary>
+<summary>🎬 More demos</summary>
+
+Cross-app: compute in Calculator → paste into Notepad:
+
+![cross-app demo](assets/demo_cross_app.gif)
+
+Single-app precision clicking:
 
 ![calculator demo](assets/demo.gif)
 
@@ -131,6 +137,23 @@ Without any VLM configured, atomic tools and UIA matching still work fully.
 - 🚨 **Failsafe**: slam your mouse to the top-left corner to abort instantly
 - ✅ `confirm_callback` hook to approve every action (SDK)
 - 🧪 `ScreenUse(dry_run=True)` records actions without executing
+
+## Extensibility
+
+screen-use is designed as a set of replaceable layers — every tier can be extended without touching the core:
+
+| Layer | Extension point | How |
+|---|---|---|
+| **Vision model** | `VisionProvider` ABC | Implement `pick_element()` + `ask_about_screen()` (2 methods) — any OpenAI-compatible endpoint works out of the box via `.env` |
+| **Tools** | SDK facade | Add a method to `ScreenUse` → expose in `mcp_server.py` with one `@mcp.tool()` decorator |
+| **Locating** | Strategy chain | Insert your own level (e.g. OpenCV template matching) in `find_element()` — earlier levels win |
+| **Actions** | `Executor` | Add drag, IME input, global hotkey hooks... `dry_run` support comes free |
+| **Platform** | `perception/` seam | Port `uia_tree.py` + `screen.py` to macOS Accessibility API or Linux AT-SPI — the rest of the stack is platform-agnostic |
+| **Memory** | `ExperienceStore` | Swap JSONL for SQLite/vector DB; the meta-learning loop only depends on `record_trace/recall/learn_mapping/recall_mapping` |
+| **Introspection** | `reflect.py` playbook | Add a `StuckType` + prompt template; classification is pure functions, easy to unit test |
+| **Host agents** | MCP | Any MCP-compatible host (Claude, Kimi CLI, Cursor, your own) gets all 14 tools instantly |
+
+Safety hooks are part of the interface too: `confirm_callback` for human-in-the-loop approval, `dry_run` for simulation, PyAutoGUI failsafe for emergency stop.
 
 ## Roadmap
 

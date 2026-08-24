@@ -37,6 +37,20 @@ def test_parse_action_invalid():
         parse_action("完全没有 JSON")
 
 
+def test_parse_action_multiple_json_objects():
+    """VLM 输出多个 JSON 时取第一个（贪婪正则会把多个对象抓成一团导致解析失败）。"""
+    raw = '{"thought": "先分析", "x": 1}\n{"thought": "点8", "action": "click_id", "id": 33}'
+    d = parse_action(raw)
+    # 第一个是思考对象没有 action → 应报未知动作而非解析崩溃？
+    # 设计决策：取第一个含 action 字段的对象
+    assert d["action"] == "click_id" and d["id"] == 33
+
+
+def test_parse_action_nested_braces_in_string():
+    raw = '{"thought": "大括号 { 测试", "action": "done", "result": "ok"}'
+    assert parse_action(raw)["action"] == "done"
+
+
 # ---- 循环执行 ----
 
 class ScriptProvider(VisionProvider):
@@ -128,3 +142,15 @@ def test_loop_action_failure_continues():
     assert result.done is True
     assert result.steps[0].ok is False
     assert "不存在" in result.steps[0].detail
+
+
+def test_loop_think_error_continues():
+    """VLM 连续返回垃圾/空响应时，记为 think_error 步骤继续循环而不是崩溃。"""
+    provider = ScriptProvider(['垃圾输出没有JSON'] * 10)
+    tools = _loop_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=2).run("测试决策失败")
+    assert result.done is False
+    assert all(s.action == "think_error" and not s.ok for s in result.steps)
+    assert len(result.steps) == 2

@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 _LOOP_PROMPT = """你是一个桌面操作 Agent。根据截图和任务，决定下一步动作。
 
 任务：{goal}
+
+当前前台窗口：{foreground}
 {experience}
 {reflection}
 截图上用彩色编号框标出了可交互元素。候选元素（编号: [类型] 名称）：
@@ -50,7 +52,11 @@ _LOOP_PROMPT = """你是一个桌面操作 Agent。根据截图和任务，决�
 - {{"thought": "...", "action": "done", "result": "任务完成的总结"}}
 
 注意：截图尺寸 {width}x{height}，点击坐标需换算回真实屏幕（乘以 {scale:.1f}）。
-每步只做一个动作。任务完成时输出 done。"""
+关键规则：
+1. 每步只做一个动作。任务完成时输出 done。
+2. 输入文本前，必须先点击目标窗口的输入区域获得焦点（检查当前前台窗口是否是目标），再执行 type。禁止假设焦点位置。
+3. 输出 done 前，必须确认截图中能直接看到任务结果（例如记事本里真的出现了输入的文字）。禁止凭历史动作推断完成。
+4. 切换窗口：直接点击候选列表中属于目标窗口的元素（点击会激活该窗口）。禁止用 alt+tab 盲目轮切。"""
 
 _ACTIONS = ("click_id", "click", "type", "hotkey", "press", "scroll", "wait", "done")
 
@@ -86,18 +92,59 @@ class TaskResult:
 
 
 def parse_action(raw: str) -> dict:
-    """解析 VLM 的动作输出：直接 JSON → 正则兜底。"""
+    """解析 VLM 的动作输出：直接 JSON → 逐个扫描平衡括号对象，取第一个含 action 的。"""
     raw = raw.strip()
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if not match:
+        data = None
+        for candidate in _iter_json_objects(raw):
+            if isinstance(candidate, dict) and "action" in candidate:
+                data = candidate
+                break
+        if data is None:
             raise ValueError(f"无法解析动作输出: {raw[:200]}")
-        data = json.loads(match.group(0))
     if data.get("action") not in _ACTIONS:
         raise ValueError(f"未知动作: {data.get('action')}")
     return data
+
+
+def _iter_json_objects(text: str):
+    """从文本中逐个提取平衡括号的 JSON 对象（容忍多个对象和前后废话）。"""
+    start = 0
+    while True:
+        start = text.find("{", start)
+        if start < 0:
+            return
+        depth = 0
+        in_str = False
+        escape = False
+        end = -1
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = not in_str
+            elif in_str:
+                continue
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end < 0:
+            return
+        try:
+            yield json.loads(text[start:end])
+        except json.JSONDecodeError:
+            pass
+        start = end
 
 
 class VisualLoop:
@@ -125,19 +172,32 @@ class VisualLoop:
             # observe
             shot = self.tools.screenshot(annotate=True)
             legend = "\n".join(
-                f"{el['id']}: [{el['control_type']}] {el['name'] or '(无名)'}"
+                f"{el['id']}: [{el['window_title']}] [{el['control_type']}] {el['name'] or '(无名)'}"
                 for el in shot["elements"]
             ) or "(无可交互元素)"
             hist_text = "\n".join(history) if history else "(无)"
+            foreground = (
+                shot["elements"][0]["window_title"] if shot["elements"] else "(未知)"
+            )
 
-            # think
+            # think（决策失败记为失败步骤继续循环，不中断任务）
             prompt = _LOOP_PROMPT.format(
-                goal=goal, legend=legend, history=hist_text,
+                goal=goal, legend=legend, history=hist_text, foreground=foreground,
                 experience=experience, reflection=reflection,
                 width=shot["width"], height=shot["height"], scale=shot["scale"],
             )
-            decision = self._think(shot["image_base64"], prompt)
             reflection = ""  # 反思只生效一轮
+            try:
+                decision = self._think(shot["image_base64"], prompt)
+            except RuntimeError as e:
+                step = Step(index=i, thought="", action="think_error",
+                            args={}, ok=False, detail=str(e))
+                result.steps.append(step)
+                history.append(f"第{i}步: 决策失败 -> {e}")
+                if on_step:
+                    on_step(step)
+                time.sleep(self.step_delay)
+                continue
 
             step = Step(
                 index=i,
@@ -231,7 +291,7 @@ class VisualLoop:
             )
             prompt = build_reflect_prompt(stuck_type, goal, history)
             raw = self.tools.provider.ask_about_screen(b64, prompt)
-            data = json.loads(re.search(r"\{.*\}", raw, re.DOTALL).group(0))
+            data = next(iter(_iter_json_objects(raw)), {})
             return f"原因: {data.get('analysis', '')} | 策略: {data.get('strategy', '')}"
         except Exception as e:
             return f"(反思失败: {e})"
@@ -239,7 +299,7 @@ class VisualLoop:
     def _think(self, image_base64: str, prompt: str) -> dict:
         provider = self.tools.provider  # VLM 未配置时在此抛错
         last_error: Exception | None = None
-        for _ in range(2):  # 解析失败重试 1 次
+        for _ in range(3):  # 解析失败/空响应重试 2 次
             try:
                 raw = provider.ask_about_screen(image_base64, prompt)
                 return parse_action(raw)

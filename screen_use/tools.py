@@ -60,6 +60,21 @@ class ScreenUse:
         if self.confirm_callback and not self.confirm_callback(description):
             raise PermissionError(f"操作被确认回调取消: {description}")
 
+    @staticmethod
+    def _activate_window(el: UIElement) -> None:
+        """点击前把元素所属窗口激活到前台（防止窗口被遮挡时点穿到别的窗口）。"""
+        if not el.window_handle:
+            return
+        import ctypes
+        import time
+
+        user32 = ctypes.windll.user32
+        hwnd = el.window_handle
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE（若在最小化）
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.15)
+
     # ================= 原子工具 =================
 
     def screenshot(self, annotate: bool = False) -> dict:
@@ -102,6 +117,7 @@ class ScreenUse:
             if el.id == element_id:
                 x, y = el.center
                 self._confirm(f"点击元素 #{element_id} [{el.control_type}] {el.name!r} @({x},{y})")
+                self._activate_window(el)
                 return self.executor.click(x, y).__dict__ | {"element": el.to_dict()}
         raise ValueError(
             f"元素 id={element_id} 不存在，请先调用 list_ui_elements 刷新元素列表"
@@ -204,6 +220,11 @@ class ScreenUse:
             f"点击 {description!r}（{result['method']} 命中: "
             f"[{result['element']['control_type']}] {result['element']['name']!r} @({x},{y})）"
         )
+        # 激活元素所属窗口（防止被遮挡时点穿）
+        for el in self._elements:
+            if el.id == result["element"]["id"]:
+                self._activate_window(el)
+                break
         action = self.executor.click(x, y)
         return result | {"action": action.__dict__}
 
