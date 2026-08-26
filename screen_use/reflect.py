@@ -86,8 +86,22 @@ def screen_fingerprint(image_base64: str) -> str:
     """截图指纹：直接对 base64 内容取 hash（同尺寸同内容即同指纹）。
 
     简单可靠：用于检测"动作执行了但屏幕没变化"。
+    注意：不要传入带 SoM 标注的图（元素 id 每轮重排，标注不同导致指纹误变），
+    标注场景请改用 elements_fingerprint。
     """
     return hashlib.md5(image_base64.encode()).hexdigest()
+
+
+def elements_fingerprint(elements: list[dict]) -> str:
+    """元素列表指纹（不含 id —— id 每轮重排会导致指纹误变）。
+
+    用于替代 SoM 标注图指纹来检测"屏幕是否变化"。
+    """
+    stable = sorted(
+        (e.get("name", ""), e.get("control_type", ""), tuple(e.get("bbox", [])))
+        for e in elements
+    )
+    return hashlib.md5(json.dumps(stable, ensure_ascii=False).encode()).hexdigest()
 
 
 def classify_stuck(signal: StuckSignal) -> StuckType | None:

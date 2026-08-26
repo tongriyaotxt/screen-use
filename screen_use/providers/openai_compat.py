@@ -52,13 +52,18 @@ class OpenAICompatProvider(VisionProvider):
         self._client = OpenAI(
             base_url=settings.effective_base_url,
             api_key=settings.effective_api_key,
+            timeout=60,  # 防止慢模型/网络问题导致无限挂起
         )
 
     def _chat_with_image(self, prompt: str, image_base64: str) -> str:
+        # 每次请求前刷新 key（kimi-code 的 OAuth token 会轮换）
+        self._client.api_key = self._settings.effective_api_key
         kwargs: dict = {}
         # Ollama：关 thinking + 扩大上下文窗口（默认 4096，图片+prompt+思考容易爆）
         if self._settings.vision_provider == "ollama":
             kwargs["extra_body"] = {"think": False, "options": {"num_ctx": 16384}}
+        # kimi-for-coding 仅允许 temperature=1；其他模型用 0 求稳定
+        temperature = 1 if self._settings.vision_provider == "kimi-code" else 0
         try:
             resp = self._client.chat.completions.create(
                 model=self._settings.effective_model,
@@ -74,8 +79,8 @@ class OpenAICompatProvider(VisionProvider):
                         ],
                     }
                 ],
-                temperature=0,
-                max_tokens=8192,  # num_ctx 16384 下的安全值；思考型模型会先输出长推理再给 JSON
+                temperature=temperature,
+                max_tokens=1024,  # 动作 JSON 足够；过大只会拖慢思考型模型
                 **kwargs,
             )
         except APIConnectionError as e:
@@ -105,14 +110,19 @@ class OpenAICompatProvider(VisionProvider):
     def pick_element(self, image_base64: str, legend: str, goal: str) -> int:
         prompt = _PICK_PROMPT.format(legend=legend, goal=goal)
         last_error: Exception | None = None
-        for _ in range(2):  # 解析失败重试 1 次
+        last_raw = ""
+        for attempt in range(2):  # 解析失败重试 1 次
             try:
                 raw = self._chat_with_image(prompt, image_base64)
+                last_raw = raw
                 data = extract_json(raw)
                 return int(data.get("id", -1))
             except (ValueError, KeyError, TypeError) as e:
                 last_error = e
-        raise RuntimeError(f"VLM 元素定位失败: {last_error}")
+        raise RuntimeError(
+            f"VLM 元素定位失败（2 次尝试均无法解析）：{last_error}；"
+            f"最后一次原始输出: {last_raw[:200]!r}"
+        )
 
     def ask_about_screen(self, image_base64: str, question: str) -> str:
         prompt = _SCREEN_QA_PROMPT.format(question=question)

@@ -22,7 +22,7 @@ from screen_use.reflect import (
     StuckSignal,
     build_reflect_prompt,
     classify_stuck,
-    screen_fingerprint,
+    elements_fingerprint,
 )
 
 if TYPE_CHECKING:
@@ -51,10 +51,13 @@ _LOOP_PROMPT = """你是一个桌面操作 Agent。根据截图和任务，决�
 - {{"thought": "...", "action": "wait", "seconds": 1}}
 - {{"thought": "...", "action": "done", "result": "任务完成的总结"}}
 
+确定的连续操作（如 点输入框→输入→回车）可用 batch 一次提交多个动作，减少往返：
+- {{"thought": "...", "batch": [{{"action": "click_id", "id": 3}}, {{"action": "type", "text": "你好"}}, {{"action": "press", "key": "enter"}}]}}
+
 注意：截图尺寸 {width}x{height}，点击坐标需换算回真实屏幕（乘以 {scale:.1f}）。
 关键规则：
 0. 不要输出思考过程。直接、只输出 JSON。
-1. 每步只做一个动作。任务完成时输出 done。
+1. 每步只做一个动作；确定的连续操作才用 batch（done 必须单独输出，不能放进 batch）。
 2. 输入文本前，必须先点击目标窗口的输入区域获得焦点（检查当前前台窗口是否是目标），再执行 type。禁止假设焦点位置。
 3. 输出 done 前，必须确认截图中能直接看到任务结果（例如记事本里真的出现了输入的文字）。禁止凭历史动作推断完成。
 4. 切换窗口：直接点击候选列表中属于目标窗口的元素（点击会激活该窗口）。禁止用 alt+tab 盲目轮切。"""
@@ -110,6 +113,32 @@ def parse_action(raw: str) -> dict:
     return data
 
 
+def parse_actions(raw: str) -> list[dict]:
+    """解析 VLM 输出为动作列表：支持单动作 JSON 或 {"batch": [动作, ...]}（向后兼容）。"""
+    raw = raw.strip()
+    candidates: list = []
+    try:
+        candidates.append(json.loads(raw))
+    except json.JSONDecodeError:
+        candidates.extend(_iter_json_objects(raw))
+    for data in candidates:
+        if not isinstance(data, dict):
+            continue
+        batch = data.get("batch")
+        if isinstance(batch, list):
+            actions = [
+                a for a in batch
+                if isinstance(a, dict) and a.get("action") in _ACTIONS
+            ]
+            if actions:
+                if data.get("thought"):
+                    actions[0].setdefault("thought", data["thought"])
+                return actions
+        if data.get("action") in _ACTIONS:
+            return [data]
+    raise ValueError(f"无法解析动作输出: {raw[:200]}")
+
+
 def _iter_json_objects(text: str):
     """从文本中逐个提取平衡括号的 JSON 对象（容忍多个对象和前后废话）。"""
     start = 0
@@ -151,7 +180,7 @@ def _iter_json_objects(text: str):
 class VisualLoop:
     """视觉行为循环执行器。通过 ScreenUse 实例使用：tools.run_task(goal)。"""
 
-    def __init__(self, tools: ScreenUse, max_steps: int = 20, step_delay: float = 0.5,
+    def __init__(self, tools: ScreenUse, max_steps: int = 40, step_delay: float = 0.5,
                  memory: ExperienceStore | None = None):
         self.tools = tools
         self.max_steps = max_steps
@@ -177,9 +206,7 @@ class VisualLoop:
                 for el in shot["elements"]
             ) or "(无可交互元素)"
             hist_text = "\n".join(history) if history else "(无)"
-            foreground = (
-                shot["elements"][0]["window_title"] if shot["elements"] else "(未知)"
-            )
+            foreground = shot.get("foreground_title") or "(未知)"
 
             # think（决策失败记为失败步骤继续循环，不中断任务）
             prompt = _LOOP_PROMPT.format(
@@ -189,7 +216,7 @@ class VisualLoop:
             )
             reflection = ""  # 反思只生效一轮
             try:
-                decision = self._think(shot["image_base64"], prompt)
+                decisions = self._think(shot["image_base64"], prompt)
             except RuntimeError as e:
                 step = Step(index=i, thought="", action="think_error",
                             args={}, ok=False, detail=str(e))
@@ -200,41 +227,45 @@ class VisualLoop:
                 time.sleep(self.step_delay)
                 continue
 
-            step = Step(
-                index=i,
-                thought=decision.get("thought", ""),
-                action=decision["action"],
-                args={k: v for k, v in decision.items() if k not in ("thought", "action")},
-                ok=True,
-            )
+            # act：依次执行本轮决策（batch 时一轮可含多个动作）
+            for decision in decisions:
+                step = Step(
+                    index=i,
+                    thought=decision.get("thought", ""),
+                    action=decision["action"],
+                    args={k: v for k, v in decision.items() if k not in ("thought", "action")},
+                    ok=True,
+                )
 
-            # act
-            if step.action == "done":
-                result.done = True
-                result.result = str(decision.get("result", "完成"))
+                if step.action == "done":
+                    result.done = True
+                    result.result = str(decision.get("result", "完成"))
+                    result.steps.append(step)
+                    if on_step:
+                        on_step(step)
+                    self._record(result)
+                    return result
+
+                try:
+                    detail = self._act(decision, shot["scale"])
+                    step.detail = detail
+                except Exception as e:  # 动作失败不中断，让 VLM 下一轮看到并纠偏
+                    step.ok = False
+                    step.detail = f"动作失败: {e}"
+
                 result.steps.append(step)
+                history.append(
+                    f"第{i}步: {step.action} {step.args} -> {'成功' if step.ok else step.detail}"
+                )
                 if on_step:
                     on_step(step)
-                self._record(result)
-                return result
-
-            try:
-                detail = self._act(decision, shot["scale"])
-                step.detail = detail
-            except Exception as e:  # 动作失败不中断，让 VLM 下一轮看到并纠偏
-                step.ok = False
-                step.detail = f"动作失败: {e}"
-
-            result.steps.append(step)
-            history.append(
-                f"第{i}步: {step.action} {step.args} -> {'成功' if step.ok else step.detail}"
-            )
-            if on_step:
-                on_step(step)
+                if not step.ok:
+                    break  # batch 中某步失败即中止本轮剩余动作，等下轮观察纠偏
 
             # 内省：困难分类检测 → 针对性提示词引导反思
-            fingerprint = screen_fingerprint(shot["image_base64"])
-            title = shot["elements"][0]["window_title"] if shot["elements"] else ""
+            # 指纹取元素列表（不含每轮重排的 id），不要用带 SoM 标注的截图（标注会误变）
+            fingerprint = elements_fingerprint(shot["elements"])
+            title = shot.get("foreground_title") or ""
             signal = StuckSignal(
                 steps=result.steps,
                 screen_changed=fingerprint != prev_fingerprint,
@@ -297,13 +328,13 @@ class VisualLoop:
         except Exception as e:
             return f"(反思失败: {e})"
 
-    def _think(self, image_base64: str, prompt: str) -> dict:
+    def _think(self, image_base64: str, prompt: str) -> list[dict]:
         provider = self.tools.provider  # VLM 未配置时在此抛错
         last_error: Exception | None = None
         for _ in range(3):  # 解析失败/空响应重试 2 次
             try:
                 raw = provider.ask_about_screen(image_base64, prompt)
-                return parse_action(raw)
+                return parse_actions(raw)
             except ValueError as e:
                 last_error = e
         raise RuntimeError(f"VLM 动作决策失败: {last_error}")

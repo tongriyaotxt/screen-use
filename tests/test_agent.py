@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from screen_use.agent import VisualLoop, parse_action
+from screen_use.agent import VisualLoop, parse_action, parse_actions
 from screen_use.config import Settings
 from screen_use.perception.uia_tree import UIElement
 from screen_use.providers.base import VisionProvider
@@ -154,3 +154,69 @@ def test_loop_think_error_continues():
     assert result.done is False
     assert all(s.action == "think_error" and not s.ok for s in result.steps)
     assert len(result.steps) == 2
+
+
+# ---- parse_actions（batch 解析，向后兼容单动作） ----
+
+def test_parse_actions_single():
+    actions = parse_actions('{"thought": "点1", "action": "click_id", "id": 1}')
+    assert len(actions) == 1 and actions[0]["action"] == "click_id"
+
+
+def test_parse_actions_batch():
+    raw = '{"thought": "连续操作", "batch": [' \
+          '{"action": "click_id", "id": 3}, ' \
+          '{"action": "type", "text": "你好"}, ' \
+          '{"action": "press", "key": "enter"}]}'
+    actions = parse_actions(raw)
+    assert [a["action"] for a in actions] == ["click_id", "type", "press"]
+    assert actions[0]["thought"] == "连续操作"  # batch 的 thought 带给第一个动作
+
+
+def test_parse_actions_batch_filters_invalid():
+    """batch 中混有未知动作时过滤掉，保留合法的。"""
+    raw = '{"batch": [{"action": "explode"}, {"action": "wait", "seconds": 1}]}'
+    actions = parse_actions(raw)
+    assert [a["action"] for a in actions] == ["wait"]
+
+
+def test_parse_actions_invalid_raises():
+    with pytest.raises(ValueError):
+        parse_actions("完全没有 JSON")
+
+
+# ---- batch 循环执行 ----
+
+def test_loop_batch_executes_multiple_actions():
+    """模型一轮返回 batch 时，一轮内依次执行多个动作。"""
+    provider = ScriptProvider([
+        '{"thought": "连续操作", "batch": ['
+        '{"action": "click_id", "id": 1}, '
+        '{"action": "type", "text": "hi"}, '
+        '{"action": "press", "key": "enter"}]}',
+        '{"thought": "已完成", "action": "done", "result": "搞定"}',
+    ])
+    tools = _loop_tools(provider)
+    tools.list_ui_elements()  # 填充 click_element_id 的缓存
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=5).run("批量操作")
+
+    assert result.done is True
+    assert [s.action for s in result.steps] == ["click_id", "type", "press", "done"]
+    assert provider.calls == 2  # batch 一轮一次 VLM 调用
+
+
+def test_loop_batch_stops_on_failure():
+    """batch 中某步失败即中止本轮剩余动作，下轮重新观察。"""
+    provider = ScriptProvider([
+        '{"batch": [{"action": "click_id", "id": 999}, {"action": "press", "key": "enter"}]}',
+        '{"action": "done", "result": "放弃"}',
+    ])
+    tools = _loop_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=5).run("容错")
+    assert result.done is True
+    assert [s.action for s in result.steps] == ["click_id", "done"]  # press 未执行
+    assert result.steps[0].ok is False

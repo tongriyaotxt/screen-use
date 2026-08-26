@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass, field
+from typing import Any
 
 # 可交互控件类型白名单（uiautomation 的 ControlType 名称）
 INTERACTIVE_TYPES = {
@@ -26,9 +28,10 @@ INTERACTIVE_TYPES = {
     "DocumentControl",
 }
 
-MAX_ELEMENTS = 60
+MAX_ELEMENTS = 150
 MAX_WINDOWS = 5
 MAX_DEPTH = 12
+MAX_VISITED = 3000  # DFS 已访问节点预算：防止大页面（浏览器/IDE）秒级遍历
 
 
 @dataclass
@@ -42,6 +45,7 @@ class UIElement:
     window_title: str = ""
     window_handle: int = 0
     extra: dict = field(default_factory=dict)
+    control: Any = field(default=None, repr=False, compare=False)  # UIA 控件对象（供文本读写，不序列化）
 
     @property
     def center(self) -> tuple[int, int]:
@@ -62,6 +66,46 @@ class UIElement:
             "center": list(self.center),
             "window_title": self.window_title,
         }
+
+
+def get_element_text(el: UIElement) -> str:
+    """读控件文本：优先 ValuePattern（Edit 的真实内容），退回控件 Name。"""
+    ctrl = el.control
+    if ctrl is not None:
+        try:
+            vp = ctrl.GetValuePattern()
+            if vp is not None:
+                return vp.Value or ""
+        except Exception:
+            pass
+    return el.name
+
+
+def set_element_text(el: UIElement, text: str) -> None:
+    """写控件文本：走 UIA ValuePattern.SetValue，绕过禁粘贴的输入框。
+
+    失败时抛 ValueError（控件缓存过期/不支持 ValuePattern），由上层决定回退策略。
+    """
+    ctrl = el.control
+    if ctrl is None:
+        raise ValueError(f"元素 #{el.id} 没有缓存的 UIA 控件，请重新 list_ui_elements")
+    try:
+        vp = ctrl.GetValuePattern()
+        if vp is None:
+            raise ValueError("不支持 ValuePattern")
+        vp.SetValue(text)
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"SetValue 失败（控件可能已失效）: {e}") from e
+
+
+class ElementList(list):
+    """list[UIElement] + 枚举时的前台窗口标题（当普通 list 用完全向后兼容）。"""
+
+    def __init__(self, iterable=(), foreground_title: str = ""):
+        super().__init__(iterable)
+        self.foreground_title = foreground_title
 
 
 def _is_valid(ctrl) -> bool:
@@ -86,12 +130,18 @@ def _safe_handle(ctrl) -> int:
 
 
 def _collect_from(root_ctrl, window_title: str, window_handle: int, screen_area: int,
-                  elements: list, budget: int) -> None:
-    """从某个窗口的控件树收集可交互元素（深度优先，受 budget 限制）。"""
+                  visited: list[int]) -> list[UIElement]:
+    """从某个窗口的控件树收集可交互元素（深度优先）。
+
+    visited: 跨窗口共享的已访问节点计数（[0] 为计数器），到 MAX_VISITED 即停，
+    防止浏览器/IDE 等大页面的控件树导致秒级遍历。
+    """
+    elements: list[UIElement] = []
 
     def walk(ctrl, depth: int) -> None:
-        if len(elements) >= budget or depth > MAX_DEPTH:
+        if visited[0] >= MAX_VISITED or depth > MAX_DEPTH:
             return
+        visited[0] += 1
         try:
             ctype = ctrl.ControlTypeName
         except Exception:
@@ -109,6 +159,7 @@ def _collect_from(root_ctrl, window_title: str, window_handle: int, screen_area:
                         bbox=bbox,
                         window_title=window_title,
                         window_handle=window_handle,
+                        control=ctrl,  # 缓存控件对象，供 get/set_element_text 使用
                     )
                 )
         try:
@@ -119,21 +170,30 @@ def _collect_from(root_ctrl, window_title: str, window_handle: int, screen_area:
             walk(child, depth + 1)
 
     walk(root_ctrl, 0)
+    return elements
+
+
+def _screen_size() -> tuple[int, int]:
+    """屏幕物理像素尺寸（进程已设 DPI-aware，GetSystemMetrics 返回物理像素）。"""
+    user32 = ctypes.windll.user32
+    return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
 
 
 def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
     """枚举所有可见顶层窗口的可交互控件（前台窗口优先）。
 
     多窗口任务时 agent 需要能看到非前台窗口的元素（点击即激活该窗口），
-    所以不只枚举前台。返回带稳定 id（1 起）的列表。
+    所以不只枚举前台。返回带稳定 id（1 起）的 ElementList（附带前台窗口标题）。
+    预算分配：先逐窗口收集，再按"前台窗口优先 + 每窗口配额"截取，
+    避免前台窗口的工具栏占满预算导致其他窗口/网页控件不可见。
     """
     import uiautomation as auto
 
-    from screen_use.perception.screen import ensure_dpi_aware, screenshot
+    from screen_use.perception.screen import ensure_dpi_aware
 
     ensure_dpi_aware()
 
-    screen_w, screen_h = screenshot().size
+    screen_w, screen_h = _screen_size()
     screen_area = screen_w * screen_h
 
     try:
@@ -157,15 +217,29 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
             continue
     windows.sort(key=lambda w: 0 if _safe_handle(w) == fg_handle else 1)
 
-    elements: list[UIElement] = []
+    # 逐窗口收集（共享节点预算），并记录窗口标题
+    visited = [0]
+    per_window: list[list[UIElement]] = []
+    foreground_title = ""
     for w in windows[:MAX_WINDOWS]:  # 前台优先，最多 5 个窗口
         try:
             title = (w.Name or "").strip() or "(无标题)"
         except Exception:
             title = "(无标题)"
-        _collect_from(w, title, _safe_handle(w), screen_area, elements, max_elements)
-        if len(elements) >= max_elements:
-            break
+        handle = _safe_handle(w)
+        if handle == fg_handle:
+            foreground_title = title
+        per_window.append(_collect_from(w, title, handle, screen_area, visited))
+
+    # 配额分配：前台窗口拿剩余大头，其余窗口均分配额
+    elements: list[UIElement] = []
+    n = len(per_window)
+    if n:
+        others_quota = max_elements // n
+        fg_quota = max_elements - others_quota * (n - 1)
+        for i, els in enumerate(per_window):
+            quota = fg_quota if i == 0 else others_quota
+            elements.extend(els[:quota])
 
     # 小控件优先（更可能是精确目标），再去重（同名同位置）
     elements.sort(key=lambda e: e.area)
@@ -179,4 +253,4 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
 
     for i, el in enumerate(unique, start=1):
         el.id = i
-    return unique
+    return ElementList(unique, foreground_title=foreground_title)

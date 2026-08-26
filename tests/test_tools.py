@@ -169,3 +169,120 @@ def test_vlm_hit_learns_mapping():
         result = tools.find_element("叉叉按钮")
     assert result["method"] == "vlm"
     assert tools.memory.recall_mapping("叉叉按钮")["name"] == "取消"
+
+
+# ---- list_ui_elements 返回结构（foreground_title） ----
+
+def test_list_ui_elements_returns_foreground_title():
+    tools = _make_tools()
+    result = tools.list_ui_elements()
+    assert "foreground_title" in result and "elements" in result
+    assert len(result["elements"]) == 3
+
+
+# ---- click_scaled ----
+
+def test_click_scaled_converts_by_last_scale():
+    tools = _make_tools()
+    tools._last_scale = 2.0
+    result = tools.click_scaled(100, 50)
+    assert result["detail"].startswith("(200, 100)")
+
+
+def test_click_scaled_default_scale_1():
+    tools = _make_tools()
+    result = tools.click_scaled(30, 40)
+    assert result["detail"].startswith("(30, 40)")
+
+
+# ---- UIA 文本读写（SDK 层） ----
+
+class _FakeVP:
+    def __init__(self, value=""):
+        self.Value = value
+
+    def SetValue(self, text):
+        self.Value = text
+
+
+class _FakeEdit:
+    def __init__(self, value=""):
+        self._vp = _FakeVP(value)
+
+    def GetValuePattern(self):
+        return self._vp
+
+
+def _tools_with_edit(value=""):
+    tools = _make_tools()
+    edit = UIElement(id=9, name="输入框", control_type="EditControl",
+                     bbox=(0, 0, 100, 30), control=_FakeEdit(value))
+    tools._elements = [edit]
+    return tools
+
+
+def test_get_element_text():
+    tools = _tools_with_edit("hello")
+    assert tools.get_element_text(9) == {"ok": True, "text": "hello"}
+
+
+def test_set_element_text():
+    tools = _tools_with_edit()
+    result = tools.set_element_text(9, "绕过禁粘贴")
+    assert result["ok"] is True
+    assert tools.get_element_text(9)["text"] == "绕过禁粘贴"
+
+
+def test_set_element_text_invalid_id():
+    tools = _tools_with_edit()
+    with pytest.raises(ValueError, match="不存在"):
+        tools.set_element_text(999, "x")
+
+
+# ---- do_actions 批量动作 ----
+
+FAKE_SHOT = {
+    "image_base64": "ZmFrZQ==",
+    "scale": 1.0,
+    "width": 100,
+    "height": 100,
+    "quality": 80,
+    "foreground_title": "",
+    "elements": [],
+}
+
+
+def test_do_actions_sequence():
+    tools = _make_tools()
+    with patch.object(ScreenUse, "screenshot", return_value=dict(FAKE_SHOT)), \
+         patch("screen_use.tools.time.sleep") as mock_sleep:
+        result = tools.do_actions([
+            {"action": "click", "x": 10, "y": 20},
+            {"action": "type_text", "text": "abc"},
+            {"action": "press", "key": "enter"},
+        ], interval=0.3)
+    assert [r["ok"] for r in result["results"]] == [True, True, True]
+    assert mock_sleep.call_count == 2  # 每步间 sleep，最后一步后不 sleep
+    assert result["screenshot"]["width"] == 100
+
+
+def test_do_actions_stops_on_failure():
+    tools = _make_tools()
+    tools.list_ui_elements()  # 填充缓存
+    with patch.object(ScreenUse, "screenshot", return_value=dict(FAKE_SHOT)), \
+         patch("screen_use.tools.time.sleep"):
+        result = tools.do_actions([
+            {"action": "click_element_id", "element_id": 999},  # 不存在 → 失败
+            {"action": "press", "key": "enter"},                # 不应执行
+        ])
+    assert len(result["results"]) == 1
+    assert result["results"][0]["ok"] is False
+    assert "不存在" in result["results"][0]["detail"]
+
+
+def test_do_actions_unknown_action():
+    tools = _make_tools()
+    with patch.object(ScreenUse, "screenshot", return_value=dict(FAKE_SHOT)):
+        result = tools.do_actions([{"action": "explode"}])
+    assert result["results"][0]["ok"] is False
+    assert "不支持的动作" in result["results"][0]["detail"]

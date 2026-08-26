@@ -14,6 +14,15 @@ import mss
 from PIL import Image
 
 _dpi_aware_done = False
+_sct = None  # 模块级缓存的 mss 实例（避免每次截图新建，mss 非线程安全但本工具单线程使用）
+
+
+def _get_sct():
+    """获取复用的 mss 实例（懒创建）。"""
+    global _sct
+    if _sct is None:
+        _sct = mss.MSS()
+    return _sct
 
 
 def ensure_dpi_aware() -> None:
@@ -35,9 +44,9 @@ def ensure_dpi_aware() -> None:
 def screenshot(monitor: int = 0) -> Image.Image:
     """截取屏幕，返回 PIL Image（物理像素）。monitor=0 表示全部显示器拼接。"""
     ensure_dpi_aware()
-    with mss.MSS() as sct:
-        raw = sct.grab(sct.monitors[monitor])
-        return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+    sct = _get_sct()
+    raw = sct.grab(sct.monitors[monitor])
+    return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
 
 def downscale(img: Image.Image, max_size: int) -> tuple[Image.Image, float]:
@@ -54,14 +63,38 @@ def downscale(img: Image.Image, max_size: int) -> tuple[Image.Image, float]:
         return img, 1.0
     ratio = max_size / longest
     new_size = (max(1, int(w * ratio)), max(1, int(h * ratio)))
-    return img.resize(new_size, Image.LANCZOS), longest / max_size
+    return img.resize(new_size, Image.BILINEAR), longest / max_size
 
 
 def to_jpeg_base64(img: Image.Image, quality: int = 80) -> str:
     """编码为 JPEG base64，用于 MCP 传输和 VLM 调用。"""
+    return base64.b64encode(to_jpeg_bytes(img, quality)).decode("ascii")
+
+
+def to_jpeg_bytes(img: Image.Image, quality: int = 80) -> bytes:
     buf = io.BytesIO()
     img.convert("RGB").save(buf, format="JPEG", quality=quality)
-    return base64.b64encode(buf.getvalue()).decode("ascii")
+    return buf.getvalue()
+
+
+def to_jpeg_base64_capped(
+    img: Image.Image,
+    quality: int = 80,
+    max_bytes: int = 90 * 1024,
+    fallback_qualities: tuple[int, ...] = (60, 40),
+) -> tuple[str, int]:
+    """编码为 JPEG base64，字节数超过 max_bytes 时逐步降 quality 重编码。
+
+    返回 (base64, 实际使用的 quality)。保证 MCP 输出不被宿主按大小截断。
+    """
+    data = to_jpeg_bytes(img, quality)
+    used = quality
+    for q in fallback_qualities:
+        if len(data) <= max_bytes:
+            break
+        data = to_jpeg_bytes(img, q)
+        used = q
+    return base64.b64encode(data).decode("ascii"), used
 
 
 def capture_for_model(max_size: int, quality: int = 80) -> tuple[Image.Image, str, float]:

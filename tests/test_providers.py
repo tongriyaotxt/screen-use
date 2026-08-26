@@ -70,3 +70,28 @@ def test_pick_element_retry_on_bad_json():
 def test_ask_about_screen():
     provider = _mock_provider("弹窗提示保存失败")
     assert provider.ask_about_screen("b64img", "弹窗说了什么？") == "弹窗提示保存失败"
+
+
+# ---- 客户端配置 ----
+
+def test_client_has_timeout():
+    """OpenAI 客户端带 timeout=60，防止慢模型/网络问题无限挂起。"""
+    with patch("screen_use.providers.openai_compat.OpenAI") as mock_openai:
+        OpenAICompatProvider(_settings())
+    assert mock_openai.call_args.kwargs["timeout"] == 60
+
+
+def test_chat_with_image_max_tokens():
+    """动作 JSON 用 max_tokens=1024 足够。"""
+    provider = _mock_provider('{"id": 1}')
+    provider.ask_about_screen("b64img", "问题")
+    kwargs = provider._client.chat.completions.create.call_args.kwargs
+    assert kwargs["max_tokens"] == 1024
+
+
+def test_pick_element_error_includes_raw():
+    """定位失败的异常信息包含最后一次原始输出，便于排查。"""
+    provider = _mock_provider("这不是 JSON")
+    with pytest.raises(RuntimeError, match="定位失败") as exc_info:
+        provider.pick_element("b64img", "", "按钮")
+    assert "这不是 JSON" in str(exc_info.value)

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import pyautogui
 
 pyautogui.FAILSAFE = True
-pyautogui.PAUSE = 0.05
+pyautogui.PAUSE = 0.02
 
 
 @dataclass
@@ -29,8 +29,8 @@ class Executor:
         self.dry_run = dry_run
         self.history: list[ActionResult] = []
 
-    def _record(self, action: str, detail: str) -> ActionResult:
-        result = ActionResult(ok=True, action=action, detail=detail, dry_run=self.dry_run)
+    def _record(self, action: str, detail: str, ok: bool = True) -> ActionResult:
+        result = ActionResult(ok=ok, action=action, detail=detail, dry_run=self.dry_run)
         self.history.append(result)
         return result
 
@@ -64,21 +64,65 @@ class Executor:
     # ---- 键盘 ----
 
     def type_text(self, text: str, interval: float = 0.02) -> ActionResult:
-        """输入文本。统一走剪贴板粘贴：
-        - 支持中文等非 ASCII 字符
-        - 避免 pyautogui.typewrite 偶发丢字符（如空格）的问题
+        """输入文本：
+        - 纯 ASCII 走 pyautogui.typewrite（快，interval 控制键间间隔）
+        - 含中文等非 ASCII 走剪贴板粘贴（typewrite 不支持，且避免偶发丢字符）
+        粘贴后对 Edit 控件做轻量校验，不一致时返回 ok=False 并附 detail，
+        上层应立即改用 set_element_text（UIA ValuePattern）而不是等下轮截图才发现。
         """
-        if not self.dry_run:
-            self._paste_via_clipboard(text)
-        return self._record("type_text", f"len={len(text)}")
+        if self.dry_run:
+            return self._record("type_text", f"len={len(text)}")
+        if text.isascii():
+            pyautogui.typewrite(text, interval=interval)
+            return self._record("type_text", f"len={len(text)} (typewrite)")
+        error = self._paste_via_clipboard(text)
+        if error:
+            return self._record("type_text", error, ok=False)
+        return self._record("type_text", f"len={len(text)} (clipboard)")
 
-    def _paste_via_clipboard(self, text: str) -> None:
+    def _paste_via_clipboard(self, text: str) -> str:
+        """剪贴板粘贴：备份/恢复用户剪贴板，粘贴后轻量验证。返回错误描述，空串表示成功。"""
         import pyperclip
 
+        try:
+            backup = pyperclip.paste()  # 备份用户剪贴板
+        except Exception:
+            backup = None
         pyperclip.copy(text)
-        time.sleep(0.1)
+        time.sleep(0.05)
         pyautogui.hotkey("ctrl", "v")
-        time.sleep(0.1)
+        time.sleep(0.05)
+        if backup is not None:
+            try:
+                pyperclip.copy(backup)  # 恢复用户剪贴板
+            except Exception:
+                pass
+        return self._verify_paste(text)
+
+    @staticmethod
+    def _verify_paste(text: str) -> str:
+        """粘贴后轻量验证：焦点是 Edit 且支持 ValuePattern 时比对内容。
+
+        返回空串表示通过或无法验证（无法验证时放行）；不一致返回差异描述。
+        """
+        try:
+            import uiautomation as auto
+
+            ctrl = auto.GetFocusedControl()
+            if ctrl is None or ctrl.ControlTypeName != "EditControl":
+                return ""
+            vp = ctrl.GetValuePattern()
+            if vp is None:
+                return ""
+            value = vp.Value or ""
+            if text in value:
+                return ""
+            return (
+                f"粘贴校验失败：期望包含 {text[:30]!r}，实际为 {value[:30]!r}"
+                "（建议改用 set_element_text）"
+            )
+        except Exception:
+            return ""  # 无法验证时放行
 
     def hotkey(self, *keys: str) -> ActionResult:
         if not self.dry_run:

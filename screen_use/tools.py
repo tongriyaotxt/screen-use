@@ -6,6 +6,7 @@ MCP Server（mcp_server.py）只是本模块的协议适配层。
 
 from __future__ import annotations
 
+import time
 from typing import Callable
 
 from screen_use.actions.executor import Executor
@@ -41,6 +42,8 @@ class ScreenUse:
         self._provider = provider
         self.memory = memory or ExperienceStore()  # 元学习：经验与词汇记忆
         self._elements: list[UIElement] = []  # 最近一次 list_ui_elements 的缓存
+        self._foreground_title = ""           # 最近一次枚举时的前台窗口标题
+        self._last_scale = 1.0                # 最近一次 screenshot 的坐标换算比例
 
     # ---- Provider 懒加载 ----
 
@@ -77,33 +80,56 @@ class ScreenUse:
 
     # ================= 原子工具 =================
 
-    def screenshot(self, annotate: bool = False) -> dict:
-        """截屏。annotate=True 时叠加 SoM 编号框并附带元素列表。"""
-        img, scale = screen.downscale(
-            screen.screenshot(), self.settings.screenshot_max_size
-        )
+    def screenshot(self, annotate: bool = False,
+                   max_size: int | None = None, quality: int | None = None) -> dict:
+        """截屏。annotate=True 时叠加 SoM 编号框并附带元素列表。
+
+        max_size / quality 缺省读配置；JPEG 字节数超 screenshot_max_bytes 时
+        自动降 quality 重编码，保证 MCP 输出不被宿主截断。
+        """
+        if max_size is None:
+            max_size = self.settings.screenshot_max_size
+        if quality is None:
+            quality = self.settings.screenshot_jpeg_quality
+        img, scale = screen.downscale(screen.screenshot(), max_size)
+        self._last_scale = scale
         elements: list[UIElement] = []
         if annotate:
             elements = self.list_ui_elements_raw()
             img = som.annotate(img, elements, scale)
+        b64, used_quality = screen.to_jpeg_base64_capped(
+            img, quality, self.settings.screenshot_max_bytes
+        )
         return {
-            "image_base64": screen.to_jpeg_base64(img, self.settings.screenshot_jpeg_quality),
+            "image_base64": b64,
             "scale": scale,
             "width": img.size[0],
             "height": img.size[1],
+            "quality": used_quality,
+            "foreground_title": self._foreground_title,
             "elements": [el.to_dict() for el in elements],
         }
 
     def list_ui_elements_raw(self) -> list[UIElement]:
-        self._elements = uia_tree.list_ui_elements()
+        result = uia_tree.list_ui_elements()
+        self._foreground_title = getattr(result, "foreground_title", "")
+        self._elements = list(result)
         return self._elements
 
-    def list_ui_elements(self) -> list[dict]:
-        """枚举前台窗口的可交互控件（名称、类型、坐标）。零模型依赖。"""
-        return [el.to_dict() for el in self.list_ui_elements_raw()]
+    def list_ui_elements(self) -> dict:
+        """枚举前台窗口的可交互控件（名称、类型、坐标）。零模型依赖。
+
+        返回 {"foreground_title": 前台窗口标题, "elements": [...]}。
+        """
+        elements = [el.to_dict() for el in self.list_ui_elements_raw()]
+        return {"foreground_title": self._foreground_title, "elements": elements}
 
     def click(self, x: int, y: int) -> dict:
         return self.executor.click(x, y).__dict__
+
+    def click_scaled(self, x: int, y: int) -> dict:
+        """点击截图上的缩放坐标（内部乘最近一次 screenshot 的 scale 换算回物理像素）。"""
+        return self.click(int(x * self._last_scale), int(y * self._last_scale))
 
     def double_click(self, x: int, y: int) -> dict:
         return self.executor.double_click(x, y).__dict__
@@ -123,6 +149,37 @@ class ScreenUse:
             f"元素 id={element_id} 不存在，请先调用 list_ui_elements 刷新元素列表"
         )
 
+    def _find_cached(self, element_id: int) -> UIElement:
+        for el in self._elements:
+            if el.id == element_id:
+                return el
+        raise ValueError(
+            f"元素 id={element_id} 不存在，请先调用 list_ui_elements 刷新元素列表"
+        )
+
+    def get_element_text(self, element_id: int) -> dict:
+        """读控件文本（优先 UIA ValuePattern，退回控件名称）。"""
+        el = self._find_cached(element_id)
+        try:
+            text = uia_tree.get_element_text(el)
+        except Exception as e:
+            return {"ok": False, "text": "", "detail": str(e)}
+        return {"ok": True, "text": text}
+
+    def set_element_text(self, element_id: int, text: str) -> dict:
+        """写控件文本：走 UIA ValuePattern.SetValue，绕过禁粘贴的输入框。"""
+        el = self._find_cached(element_id)
+        self._confirm(f"设置元素 #{element_id} [{el.control_type}] {el.name!r} 的文本: {text[:50]!r}")
+        self._activate_window(el)
+        try:
+            uia_tree.set_element_text(el, text)
+        except ValueError as e:
+            return {
+                "ok": False,
+                "detail": f"{e}（可回退：click_element_id 聚焦后 type_text）",
+            }
+        return {"ok": True, "detail": f"已设置元素 #{element_id} 文本 len={len(text)}"}
+
     def type_text(self, text: str) -> dict:
         self._confirm(f"输入文本: {text[:50]!r}")
         return self.executor.type_text(text).__dict__
@@ -136,6 +193,59 @@ class ScreenUse:
 
     def scroll(self, clicks: int, x: int | None = None, y: int | None = None) -> dict:
         return self.executor.scroll(clicks, x, y).__dict__
+
+    # ================= 批量动作 =================
+
+    def do_actions(self, actions: list[dict], interval: float = 0.3,
+                   shot_max_size: int | None = None, shot_quality: int | None = None) -> dict:
+        """批量执行一串动作，每步间 sleep interval 秒，最后返回一次截图（体积受控）。
+
+        支持的动作：click / double_click / right_click / type_text / press /
+        hotkey / scroll / click_element_id / set_element_text。
+        让宿主一次调用完成 "点输入框→输入→Tab→输入→回车" 这类序列。
+        某步出错即中止（避免在错误状态下继续盲操作）。
+        """
+        results = []
+        for i, spec in enumerate(actions):
+            action = spec.get("action", "")
+            try:
+                r = self._dispatch_action(action, spec)
+                ok = bool(r.get("ok", True))
+                detail = r.get("detail", "")
+            except Exception as e:
+                ok, detail = False, str(e)
+            results.append({"step": i, "action": action, "ok": ok, "detail": detail})
+            if not ok:
+                break
+            if i < len(actions) - 1:
+                time.sleep(interval)
+        shot = self.screenshot(max_size=shot_max_size, quality=shot_quality)
+        return {"results": results, "screenshot": shot}
+
+    def _dispatch_action(self, action: str, spec: dict) -> dict:
+        """do_actions 的单步分发。"""
+        if action == "click":
+            return self.click(int(spec["x"]), int(spec["y"]))
+        if action == "double_click":
+            return self.double_click(int(spec["x"]), int(spec["y"]))
+        if action == "right_click":
+            return self.right_click(int(spec["x"]), int(spec["y"]))
+        if action == "type_text":
+            return self.type_text(str(spec["text"]))
+        if action == "press":
+            return self.press(str(spec["key"]))
+        if action == "hotkey":
+            keys = spec["keys"]
+            if isinstance(keys, str):
+                keys = keys.split("+")
+            return self.hotkey(*keys)
+        if action == "scroll":
+            return self.scroll(int(spec["clicks"]), spec.get("x"), spec.get("y"))
+        if action == "click_element_id":
+            return self.click_element_id(int(spec["element_id"]))
+        if action == "set_element_text":
+            return self.set_element_text(int(spec["element_id"]), str(spec["text"]))
+        raise ValueError(f"不支持的动作: {action!r}")
 
     # ================= 高层工具（策略链） =================
 
@@ -238,7 +348,7 @@ class ScreenUse:
 
     # ================= 视觉行为循环 =================
 
-    def run_task(self, goal: str, max_steps: int = 20, on_step=None) -> dict:
+    def run_task(self, goal: str, max_steps: int = 40, on_step=None) -> dict:
         """视觉行为循环：observe → think → act → verify，直到任务完成。
 
         需要 VLM。on_step: 可选回调 fn(Step)，用于实时观察每一步。

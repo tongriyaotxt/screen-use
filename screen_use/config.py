@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,7 +13,20 @@ PROVIDER_PRESETS = {
     "openai": ("https://api.openai.com/v1", "gpt-4o"),
     "qwen": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-max"),
     "ollama": ("http://localhost:11434/v1", "qwen2.5vl:7b"),
+    # Kimi Code 订阅（OAuth 走 ~/.kimi/credentials，access token 动态读取）
+    "kimi-code": ("https://api.kimi.com/coding/v1", "kimi-for-coding"),
 }
+
+# Kimi CLI 的 OAuth 凭据文件（kimi CLI 会自动刷新 access_token）
+_KIMI_CREDENTIALS = Path.home() / ".kimi" / "credentials" / "kimi-code.json"
+
+
+def _kimi_access_token() -> str:
+    """读取 Kimi CLI 的当前 OAuth access_token（每次调用实时读，天然跟随刷新）。"""
+    try:
+        return json.loads(_KIMI_CREDENTIALS.read_text(encoding="utf-8"))["access_token"]
+    except Exception:
+        return ""
 
 
 class Settings(BaseSettings):
@@ -27,6 +43,7 @@ class Settings(BaseSettings):
     # 截图
     screenshot_max_size: int = 1280
     screenshot_jpeg_quality: int = 80
+    screenshot_max_bytes: int = 90 * 1024  # JPEG 字节上限，超限自动降 quality 重编码（防 MCP 输出被宿主截断）
 
     @property
     def vlm_available(self) -> bool:
@@ -35,6 +52,8 @@ class Settings(BaseSettings):
             return False
         if self.vision_provider == "ollama":
             return True
+        if self.vision_provider == "kimi-code":
+            return bool(_kimi_access_token())
         return bool(self.vision_api_key)
 
     @property
@@ -53,6 +72,9 @@ class Settings(BaseSettings):
 
     @property
     def effective_api_key(self) -> str:
+        # kimi-code：动态读 OAuth access_token（15 分钟轮换，不能写死）
+        if self.vision_provider == "kimi-code":
+            return _kimi_access_token()
         # Ollama 的 OpenAI 兼容端点要求传任意非空 key
         return self.vision_api_key or "ollama"
 
