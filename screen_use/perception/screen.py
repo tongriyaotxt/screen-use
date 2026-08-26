@@ -25,6 +25,23 @@ def _get_sct():
     return _sct
 
 
+def _reset_sct() -> None:
+    """销毁缓存的 mss 实例。
+
+    mss 的 Windows GDI 后端在 MSS() 初始化时创建 srcdc/memdc（GetWindowDC/
+    CreateCompatibleDC）并反复复用；显示器睡眠唤醒、驱动重置、分辨率/DPI 变更、
+    RDP 会话切换等都会让这些 DC 句柄失效，之后每次 BitBlt 都失败。重建实例
+    即可拿到新 DC，无需重启进程。
+    """
+    global _sct
+    if _sct is not None:
+        try:
+            _sct.close()
+        except Exception:  # noqa: BLE001 - close 失败不影响后续重建
+            pass
+        _sct = None
+
+
 def ensure_dpi_aware() -> None:
     """将进程标记为 DPI-aware（只需调用一次）。"""
     global _dpi_aware_done
@@ -42,10 +59,19 @@ def ensure_dpi_aware() -> None:
 
 
 def screenshot(monitor: int = 0) -> Image.Image:
-    """截取屏幕，返回 PIL Image（物理像素）。monitor=0 表示全部显示器拼接。"""
+    """截取屏幕，返回 PIL Image（物理像素）。monitor=0 表示全部显示器拼接。
+
+    GDI 的 BitBlt 在 DC 句柄失效后会持续报错（见 _reset_sct 注释），
+    捕获 ScreenShotError 后重建 mss 实例重试一次，避免 MCP 服务永久截不了图。
+    """
     ensure_dpi_aware()
     sct = _get_sct()
-    raw = sct.grab(sct.monitors[monitor])
+    try:
+        raw = sct.grab(sct.monitors[monitor])
+    except mss.exception.ScreenShotError:
+        _reset_sct()
+        sct = _get_sct()
+        raw = sct.grab(sct.monitors[monitor])
     return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
 

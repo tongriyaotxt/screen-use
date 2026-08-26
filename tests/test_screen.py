@@ -69,3 +69,61 @@ def test_mss_instance_reused(monkeypatch):
     screen.screenshot(monitor=1)
     screen.screenshot(monitor=1)
     assert len(calls) == 1
+
+
+def test_screenshot_recovers_from_stale_gdi(monkeypatch):
+    """BitBlt 因 DC 失效报 ScreenShotError 后，重建 mss 实例并重试成功。"""
+    import mss
+
+    calls = []
+    closed = []
+
+    class _FlakyMSS:
+        def __init__(self):
+            calls.append(1)
+            self.monitors = [None, {"left": 0, "top": 0, "width": 2, "height": 2}]
+
+        def grab(self, mon):
+            if len(calls) == 1:  # 第一个实例的 DC 已失效
+                raise mss.exception.ScreenShotError(
+                    "Windows graphics function failed: BitBlt"
+                )
+
+            class _Raw:
+                size = (2, 2)
+                bgra = b"\x00\x00\x00\xff" * 4
+            return _Raw()
+
+        def close(self):
+            closed.append(1)
+
+    monkeypatch.setattr("mss.MSS", _FlakyMSS)
+    monkeypatch.setattr(screen, "_sct", None)
+    img = screen.screenshot(monitor=1)
+    assert img.size == (2, 2)
+    assert len(calls) == 2  # 旧实例废弃 + 新实例重试
+    assert len(closed) == 1  # 旧实例被正确关闭
+
+
+def test_screenshot_reraises_when_retry_also_fails(monkeypatch):
+    """重建后仍失败则照常抛错，不吞异常。"""
+    import mss
+
+    class _DeadMSS:
+        def __init__(self):
+            self.monitors = [None, {"left": 0, "top": 0, "width": 2, "height": 2}]
+
+        def grab(self, mon):
+            raise mss.exception.ScreenShotError("Windows graphics function failed: BitBlt")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("mss.MSS", _DeadMSS)
+    monkeypatch.setattr(screen, "_sct", None)
+    try:
+        screen.screenshot(monitor=1)
+    except mss.exception.ScreenShotError:
+        pass
+    else:
+        raise AssertionError("应当抛出 ScreenShotError")
