@@ -6,6 +6,7 @@ MCP Server（mcp_server.py）只是本模块的协议适配层。
 
 from __future__ import annotations
 
+import concurrent.futures
 import time
 from typing import Callable
 
@@ -86,16 +87,26 @@ class ScreenUse:
 
         max_size / quality 缺省读配置；JPEG 字节数超 screenshot_max_bytes 时
         自动降 quality 重编码，保证 MCP 输出不被宿主截断。
+        annotate 时 UIA 枚举与截图/缩放并行执行（不同子系统无线程冲突）。
         """
         if max_size is None:
             max_size = self.settings.screenshot_max_size
         if quality is None:
             quality = self.settings.screenshot_jpeg_quality
-        img, scale = screen.downscale(screen.screenshot(), max_size)
-        self._last_scale = scale
         elements: list[UIElement] = []
         if annotate:
-            elements = self.list_ui_elements_raw()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                fut = pool.submit(self._enum_elements_in_thread)
+                img, scale = screen.downscale(screen.screenshot(), max_size)
+                try:
+                    elements = fut.result(timeout=10)
+                except Exception:
+                    # 线程内枚举失败（如 COM 环境异常）→ 主线程顺序枚举兑底
+                    elements = self.list_ui_elements_raw()
+        else:
+            img, scale = screen.downscale(screen.screenshot(), max_size)
+        self._last_scale = scale
+        if annotate:
             img = som.annotate(img, elements, scale)
         b64, used_quality = screen.to_jpeg_base64_capped(
             img, quality, self.settings.screenshot_max_bytes
@@ -109,6 +120,16 @@ class ScreenUse:
             "foreground_title": self._foreground_title,
             "elements": [el.to_dict() for el in elements],
         }
+
+    def _enum_elements_in_thread(self) -> list[UIElement]:
+        """在线程中枚举 UIA 元素（uiautomation 基于 COM，需先 CoInitialize）。"""
+        import comtypes
+
+        comtypes.CoInitialize()
+        try:
+            return self.list_ui_elements_raw()
+        finally:
+            comtypes.CoUninitialize()
 
     def list_ui_elements_raw(self) -> list[UIElement]:
         result = uia_tree.list_ui_elements()
@@ -285,7 +306,7 @@ class ScreenUse:
                 ),
             }
         img, scale = screen.downscale(
-            screen.screenshot(), self.settings.screenshot_max_size
+            screen.screenshot(), self.settings.vlm_max_size
         )
         annotated = som.annotate(img, elements, scale)
         b64 = screen.to_jpeg_base64(annotated, self.settings.screenshot_jpeg_quality)
@@ -342,7 +363,7 @@ class ScreenUse:
         """就当前屏幕内容提问（硬性需要 VLM）。"""
         provider = self.provider  # VLM 未配置时在此直接报错，不做无谓截图
         _, b64, _ = screen.capture_for_model(
-            self.settings.screenshot_max_size, self.settings.screenshot_jpeg_quality
+            self.settings.vlm_max_size, self.settings.screenshot_jpeg_quality
         )
         return provider.ask_about_screen(b64, question)
 

@@ -220,3 +220,104 @@ def test_loop_batch_stops_on_failure():
     assert result.done is True
     assert [s.action for s in result.steps] == ["click_id", "done"]  # press 未执行
     assert result.steps[0].ok is False
+
+
+# ---- _think 纠正式重试 ----
+
+class FeedbackProvider(VisionProvider):
+    """第一次返回垃圾，第二次返回合法 JSON；记录收到的 prompt。"""
+
+    def __init__(self):
+        self.prompts: list[str] = []
+
+    def pick_element(self, image_base64, legend, goal):
+        return -1
+
+    def ask_about_screen(self, image_base64, question):
+        self.prompts.append(question)
+        if len(self.prompts) == 1:
+            return "垃圾输出没有JSON"
+        return '{"action": "done", "result": "ok"}'
+
+
+def test_think_retry_with_feedback():
+    """解析失败重试时把错误原因反馈给模型（纠正式重试），且只重试 1 次即成功。"""
+    provider = FeedbackProvider()
+    tools = _loop_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=3).run("测试纠错重试")
+    assert result.done is True
+    assert len(provider.prompts) == 2
+    assert "纠错" in provider.prompts[1]  # 第二次调用带了解析错误反馈
+
+
+# ---- _reflect 复用 observe 截图 ----
+
+class RecordingProvider(VisionProvider):
+    """按脚本返回，同时记录每次调用的图片和问题。"""
+
+    def __init__(self, script: list[str]):
+        self.script = script
+        self.calls = 0
+        self.images: list[str] = []
+        self.questions: list[str] = []
+
+    def pick_element(self, image_base64, legend, goal):
+        return -1
+
+    def ask_about_screen(self, image_base64, question):
+        self.images.append(image_base64)
+        self.questions.append(question)
+        text = self.script[min(self.calls, len(self.script) - 1)]
+        self.calls += 1
+        return text
+
+
+def test_reflect_reuses_observe_screenshot():
+    """反思时复用本轮 observe 的截图（不重复截图），且反思结论注入下一轮 prompt。"""
+    provider = RecordingProvider([
+        '{"action": "click_id", "id": 1}',
+        '{"action": "click_id", "id": 1}',               # 屏幕不变 → NO_EFFECT → 触发反思
+        '{"analysis": "点不动", "strategy": "换双击"}',  # 反思响应
+        '{"action": "done", "result": "ok"}',
+    ])
+    tools = _loop_tools(provider)
+    tools.list_ui_elements()  # 填充 click_element_id 的缓存
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=5).run("测试反思复用截图")
+
+    assert result.done is True
+    reflect_idx = next(i for i, q in enumerate(provider.questions) if "内省反思" in q)
+    # 反思用的是 observe 的截图（FAKE_SHOT 的 base64），不是重新截的
+    assert provider.images[reflect_idx] == FAKE_SHOT["image_base64"]
+    # 反思结论注入了后续 think 的 prompt
+    later_prompts = provider.questions[reflect_idx + 1:]
+    assert any("点不动" in q for q in later_prompts)
+
+
+# ---- vlm_max_size ----
+
+def test_loop_uses_vlm_max_size():
+    """observe 截图用 vlm_max_size（发给 VLM 的图更小、TTFT 更低），而非 screenshot_max_size。"""
+    provider = ScriptProvider(['{"action": "done", "result": "ok"}'])
+    settings = Settings(vision_provider="custom", vision_base_url="http://x/v1",
+                        vision_api_key="k", vision_model="m", vlm_max_size=640)
+    tools = ScreenUse(dry_run=True, settings=settings, provider=provider)
+    captured = {}
+
+    def fake_screenshot(self, annotate=False, max_size=None, quality=None):
+        captured["max_size"] = max_size
+        return dict(FAKE_SHOT)
+
+    with patch.object(ScreenUse, "screenshot", fake_screenshot), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=2).run("测试 vlm_max_size")
+    assert result.done is True
+    assert captured["max_size"] == 640
+
+
+def test_vlm_max_size_default():
+    """vlm_max_size 默认 896（不读 .env，隔离用户本机配置）。"""
+    assert Settings(_env_file=None).vlm_max_size == 896

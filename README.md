@@ -219,6 +219,7 @@ Safety hooks are part of the interface too: `confirm_callback` for human-in-the-
 - [x] Autonomous visual loop (`run_task`)
 - [x] Introspection playbook & meta-learning memory
 - [ ] `wait_for_element` / auto-verification primitives
+- [ ] **Experience replay: compile successful traces into parameterized skill macros** (semantic anchors + checkpoints + VLM fallback) — design: [research/experience-replay](research/experience-replay/DESIGN.md)
 - [ ] Drag & drop
 - [ ] VLM raw-coordinate fallback + OpenCV template matching (UIA-blind apps)
 - [ ] macOS (Accessibility API) & Linux support

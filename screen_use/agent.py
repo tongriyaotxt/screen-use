@@ -199,8 +199,10 @@ class VisualLoop:
         experience = self._recall_experience(goal)
 
         for i in range(1, self.max_steps + 1):
-            # observe
-            shot = self.tools.screenshot(annotate=True)
+            # observe（发给 VLM 的图用 vlm_max_size：更小 → TTFT 更低；click_id 不依赖分辨率）
+            shot = self.tools.screenshot(
+                annotate=True, max_size=self.tools.settings.vlm_max_size
+            )
             legend = "\n".join(
                 f"{el['id']}: [{el['window_title']}] [{el['control_type']}] {el['name'] or '(无名)'}"
                 for el in shot["elements"]
@@ -275,7 +277,8 @@ class VisualLoop:
             prev_fingerprint, prev_title = fingerprint, title
             stuck_type = classify_stuck(signal)
             if stuck_type and i < self.max_steps:
-                reflection = self._reflect(stuck_type, goal, history)
+                # 复用本轮截图（带 SoM 标注），不再重复截图
+                reflection = self._reflect(stuck_type, goal, history, shot["image_base64"])
                 history.append(f"[反思·{stuck_type.value}] {reflection}")
 
             time.sleep(self.step_delay)
@@ -312,17 +315,14 @@ class VisualLoop:
 
     # ================= 内省 =================
 
-    def _reflect(self, stuck_type, goal: str, history: list[str]) -> str:
-        """内省：按困难类型生成针对性提示词，让 VLM 分析原因并调整策略。"""
-        try:
-            from screen_use.perception import screen as screen_mod
+    def _reflect(self, stuck_type, goal: str, history: list[str], image_base64: str) -> str:
+        """内省：按困难类型生成针对性提示词，让 VLM 分析原因并调整策略。
 
-            _, b64, _ = screen_mod.capture_for_model(
-                self.tools.settings.screenshot_max_size,
-                self.tools.settings.screenshot_jpeg_quality,
-            )
+        复用本轮 observe 的截图（带 SoM 标注），不重复截图。
+        """
+        try:
             prompt = build_reflect_prompt(stuck_type, goal, history)
-            raw = self.tools.provider.ask_about_screen(b64, prompt)
+            raw = self.tools.provider.ask_about_screen(image_base64, prompt)
             data = next(iter(_iter_json_objects(raw)), {})
             return f"原因: {data.get('analysis', '')} | 策略: {data.get('strategy', '')}"
         except Exception as e:
@@ -331,12 +331,17 @@ class VisualLoop:
     def _think(self, image_base64: str, prompt: str) -> list[dict]:
         provider = self.tools.provider  # VLM 未配置时在此抛错
         last_error: Exception | None = None
-        for _ in range(3):  # 解析失败/空响应重试 2 次
+        current_prompt = prompt
+        for _ in range(2):  # 解析失败重试 1 次，并把错误原因反馈给模型（纠正式重试，非盲重试）
             try:
-                raw = provider.ask_about_screen(image_base64, prompt)
+                raw = provider.ask_about_screen(image_base64, current_prompt)
                 return parse_actions(raw)
             except ValueError as e:
                 last_error = e
+                current_prompt = prompt + (
+                    f"\n\n【纠错】你上次的输出无法解析为动作 JSON：{e}\n"
+                    "请只输出一个 JSON 对象，不要输出任何其他内容。"
+                )
         raise RuntimeError(f"VLM 动作决策失败: {last_error}")
 
     def _act(self, decision: dict, scale: float) -> str:

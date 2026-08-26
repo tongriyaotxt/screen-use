@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     screenshot_jpeg_quality: int = 80
     screenshot_max_bytes: int = 90 * 1024  # JPEG 字节上限，超限自动降 quality 重编码（防 MCP 输出被宿主截断）
 
+    # VLM 专用截图尺寸：VLM 内部会把图切成 token 网格，1280px ≈ 上千 image token。
+    # 发给 VLM 的图单独用更小的尺寸可显著降低 TTFT；click_id 路径按元素 id 定位，不依赖分辨率。
+    vlm_max_size: int = 896
+
     @property
     def vlm_available(self) -> bool:
         """VLM 是否可用：本地 Ollama 不需要 API key，云端需要。"""

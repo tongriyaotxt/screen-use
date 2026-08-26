@@ -286,3 +286,32 @@ def test_do_actions_unknown_action():
         result = tools.do_actions([{"action": "explode"}])
     assert result["results"][0]["ok"] is False
     assert "不支持的动作" in result["results"][0]["detail"]
+
+
+# ---- screenshot(annotate=True)：UIA 枚举与截图并行 ----
+
+def test_screenshot_annotate_parallel_returns_elements():
+    """annotate=True 时元素枚举（线程内）与截图并行，结果包含元素列表和标注图。"""
+    from PIL import Image
+
+    tools = _make_tools()
+    with patch("screen_use.tools.screen.screenshot",
+               return_value=Image.new("RGB", (800, 600), "white")):
+        result = tools.screenshot(annotate=True)
+    assert len(result["elements"]) == 3  # 来自 mock_uia 的 FAKE_ELEMENTS
+    assert result["image_base64"]
+
+
+def test_screenshot_annotate_falls_back_when_thread_fails(monkeypatch):
+    """线程内枚举失败（如 COM 环境异常）时，主线程顺序枚举兜底。"""
+    from PIL import Image
+
+    def boom(self):
+        raise RuntimeError("COM 爆炸")
+
+    monkeypatch.setattr(ScreenUse, "_enum_elements_in_thread", boom)
+    tools = _make_tools()
+    with patch("screen_use.tools.screen.screenshot",
+               return_value=Image.new("RGB", (800, 600), "white")):
+        result = tools.screenshot(annotate=True)
+    assert len(result["elements"]) == 3  # 兜底路径仍拿到元素（mock_uia）
