@@ -7,3 +7,6 @@ build/
 .env
 .pytest_cache/
 @AutomationLog.txt
+
+# demo 脚本临时记事本文件
+scratch_*.txt
