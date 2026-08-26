@@ -63,6 +63,16 @@ Your Agent (Claude / Kimi / Cursor / custom)   ← does the planning
 
 **VLM is optional, not required.** The locating strategy chain hits most targets with pure Accessibility-tree text matching — zero model calls, millisecond latency. A vision model (cloud or local via Ollama) only kicks in for UIA-blind UIs.
 
+## Capabilities at a glance
+
+- 👀 **Sees** — full-screen screenshots with Set-of-Mark annotation, plus the live UIA accessibility tree (150 controls, foreground-window priority, ~0.1s per scan)
+- 🖐️ **Acts** — pixel-precise mouse/keyboard, batch action sequences in one call, and direct control text read/write via UIA ValuePattern (works even where clipboard paste is blocked)
+- 🧠 **Thinks** — autonomous observe→think→act→verify loop with an introspection playbook (classifies *why* it's stuck and changes strategy) and meta-learning memory that makes repeat tasks faster over time
+- 🔌 **Plugs in** — 18 MCP tools instantly available to any MCP host (Kimi CLI, Claude Desktop, Cursor), or a 3-line Python SDK
+- 💰 **Model-optional** — UIA-first locating means most actions need zero model calls; local Ollama VLMs keep the whole perceive→act loop on-device
+- 🛡️ **Safe** — `dry_run` simulation, per-action `confirm_callback`, and a slam-to-corner failsafe
+- 🌐 **Field-tested** — drove a real academic journal submission end-to-end (Papercept + ORCID + OAuth binding, 30+ steps) in a live browser with zero selectors
+
 ## Quickstart
 
 ```bash
@@ -214,12 +224,21 @@ Safety hooks are part of the interface too: `confirm_callback` for human-in-the-
 - [ ] macOS (Accessibility API) & Linux support
 - [ ] PyPI release
 
+## Where it's headed
+
+The long-term bet: **GUIs were built for humans — agents shouldn't need APIs to use software.** screen-use aims to be the open desktop action layer for the agent era.
+
+- **Any agent, any app.** MCP is becoming the USB-C of agent tooling, and the accessibility tree is the closest thing to a universal UI protocol. Combined, any MCP-compatible agent can operate *any* desktop software — including the legacy line-of-business apps (SAP GUI, bank and hospital terminals, old ERPs) that will never ship an API. That's a huge, underserved surface traditional RPA monetizes at enterprise prices; screen-use makes it free and agent-native.
+- **From automation to delegation.** The meta-learning memory turns repeated tasks into near-deterministic runs. The endgame isn't scripting steps — it's describing an outcome (*"file my expense report"*, *"reconcile this spreadsheet against the ERP export"*) and trusting the loop.
+- **Local-first privacy.** Screen content is the most sensitive data there is. With local VLMs (Ollama) and the UIA-first strategy chain, the entire perceive→decide→act loop can run without a single byte leaving the machine.
+- **Cross-platform by design.** The only Windows-specific code is the perception seam (`uia_tree.py` + `screen.py`); macOS Accessibility API and Linux AT-SPI ports slot into the same interface.
+
 Contributions welcome — see issues for good first tasks.
 
 ## Development
 
 ```bash
-pytest tests -q                        # 64 unit tests, no desktop/VLM needed
+pytest tests -q                        # 97 unit tests, no desktop/VLM needed
 python examples/demo_calculator.py     # end-to-end demo (real clicks!)
 python examples/mcp_client_demo.py     # MCP handshake + tool list
 ```
@@ -240,6 +259,8 @@ MIT
 - **自然语言驱动**：`click_element("保存按钮")` 一句话搞定
 - **VLM 可选**：策略链第一级是纯 UIA 文本匹配（零模型、毫秒级），视觉模型只在盲区兜底，支持本地 Ollama 保护隐私，也可直接复用 Kimi Code 订阅（`VISION_PROVIDER=kimi-code`，OAuth 免配置）
 - **真实场景验证**：曾在真实浏览器中驱动学术期刊投稿全流程（Papercept 注册 + ORCID 五步注册 + OAuth 绑定），遇禁粘贴表单自动降级逐键输入
+- **能力一览**：截图 + UIA 无障碍树双感知；鼠标键盘原子动作 + 批量动作 + 控件文本直读直写；自主观察-决策-执行-验证闭环，带困难分类反思和元学习记忆；`dry_run` 模拟 + 逐动作确认 + 紧急中止
+- **未来方向**：成为 Agent 时代的开放桌面操作层——任何 MCP 宿主操作任何桌面软件（含永远没有 API 的老旧业务系统）；元学习让重复任务趋于确定性执行，从"自动化"走向"委托"；本地 VLM 保证屏幕数据不出机；感知层是唯一平台相关代码，macOS / Linux 移植已在路线图上
 
 接入方式、工具列表、安全配置与上文英文版一致。
 
