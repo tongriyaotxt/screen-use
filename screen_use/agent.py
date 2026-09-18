@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from screen_use.memory import ExperienceStore
+from screen_use.memory import ExperienceStore, TraceRecorder
 from screen_use.reflect import (
     StuckSignal,
     build_reflect_prompt,
@@ -60,7 +60,8 @@ _LOOP_PROMPT = """你是一个桌面操作 Agent。根据截图和任务，决�
 1. 每步只做一个动作；确定的连续操作才用 batch（done 必须单独输出，不能放进 batch）。
 2. 输入文本前，必须先点击目标窗口的输入区域获得焦点（检查当前前台窗口是否是目标），再执行 type。禁止假设焦点位置。
 3. 输出 done 前，必须确认截图中能直接看到任务结果（例如记事本里真的出现了输入的文字）。禁止凭历史动作推断完成。
-4. 切换窗口：直接点击候选列表中属于目标窗口的元素（点击会激活该窗口）。禁止用 alt+tab 盲目轮切。"""
+4. 切换窗口：直接点击候选列表中属于目标窗口的元素（点击会激活该窗口）。禁止用 alt+tab 盲目轮切。
+5. 涉及键盘输入的连续操作（如 点击激活输入区→输入文本→回车、计算器连续按键）必须用 batch 一次提交；焦点可能被其他窗口抢占，分轮执行容易落空。"""
 
 _ACTIONS = ("click_id", "click", "type", "hotkey", "press", "scroll", "wait", "done")
 
@@ -198,6 +199,15 @@ class VisualLoop:
         # 元学习：检索相似历史任务经验
         experience = self._recall_experience(goal)
 
+        # desktop-jev 阶段 0：结构化逐步轨迹采集（写入失败不影响任务）
+        recorder: TraceRecorder | None = None
+        if self.tools.settings.record_full_trace:
+            try:
+                recorder = TraceRecorder(self.memory.home)
+                recorder.start_task(goal)
+            except OSError:
+                recorder = None
+
         for i in range(1, self.max_steps + 1):
             # observe（发给 VLM 的图用 vlm_max_size：更小 → TTFT 更低；click_id 不依赖分辨率）
             shot = self.tools.screenshot(
@@ -224,6 +234,7 @@ class VisualLoop:
                             args={}, ok=False, detail=str(e))
                 result.steps.append(step)
                 history.append(f"第{i}步: 决策失败 -> {e}")
+                self._trace(recorder, step, shot)
                 if on_step:
                     on_step(step)
                 time.sleep(self.step_delay)
@@ -243,6 +254,7 @@ class VisualLoop:
                     result.done = True
                     result.result = str(decision.get("result", "完成"))
                     result.steps.append(step)
+                    self._trace(recorder, step, shot)
                     if on_step:
                         on_step(step)
                     self._record(result)
@@ -259,6 +271,7 @@ class VisualLoop:
                 history.append(
                     f"第{i}步: {step.action} {step.args} -> {'成功' if step.ok else step.detail}"
                 )
+                self._trace(recorder, step, shot)
                 if on_step:
                     on_step(step)
                 if not step.ok:
@@ -285,6 +298,18 @@ class VisualLoop:
 
         self._record(result)
         return result
+
+    def _trace(self, recorder: TraceRecorder | None, step: Step, shot: dict) -> None:
+        """desktop-jev 阶段 0：落盘一步「元素表 + 决策 + 结果」（写入失败不影响任务）。"""
+        if recorder is None:
+            return
+        try:
+            recorder.record_step(
+                step.index, shot.get("foreground_title") or "",
+                shot.get("elements", []), step.action, step.args, step.ok, step.detail,
+            )
+        except OSError:
+            pass
 
     def _record(self, result: TaskResult) -> None:
         """元学习：任务结束记录轨迹（写入失败不影响任务结果）。"""

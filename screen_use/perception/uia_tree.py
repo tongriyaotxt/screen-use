@@ -29,7 +29,7 @@ INTERACTIVE_TYPES = {
 }
 
 MAX_ELEMENTS = 150
-MAX_WINDOWS = 5
+MAX_WINDOWS = 8   # 真实桌面顶层窗口常达 10+（2026-09-18 实测 13），5 会整窗丢失目标
 MAX_DEPTH = 12
 MAX_VISITED = 3000  # DFS 已访问节点预算：防止大页面（浏览器/IDE）秒级遍历
 
@@ -231,18 +231,31 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
             foreground_title = title
         per_window.append(_collect_from(w, title, handle, screen_area, visited))
 
-    # 配额分配：前台窗口拿剩余大头，其余窗口均分配额
+    # 配额分配：前台窗口保底一半，其余窗口均分另一半。
+    # 每窗口内先去重再按面积升序截取：重复项不吃配额，小控件（按钮）优先于大容器——
+    # 避免计算器等窗口的数字按钮被同名重复项/大面板挤掉（2026-09-18 实测 7/8/9 丢失事故）。
     elements: list[UIElement] = []
     n = len(per_window)
     if n:
-        others_quota = max_elements // n
-        fg_quota = max_elements - others_quota * (n - 1)
+        fg_quota = max_elements // 2
+        others_quota = (max_elements - fg_quota) // max(n - 1, 1)
         for i, els in enumerate(per_window):
             quota = fg_quota if i == 0 else others_quota
+            els = _dedup_by_identity(els)
+            els.sort(key=lambda e: e.area)
             elements.extend(els[:quota])
 
     # 小控件优先（更可能是精确目标），再去重（同名同位置）
     elements.sort(key=lambda e: e.area)
+    unique = _dedup_by_identity(elements)
+
+    for i, el in enumerate(unique, start=1):
+        el.id = i
+    return ElementList(unique, foreground_title=foreground_title)
+
+
+def _dedup_by_identity(elements: list[UIElement]) -> list[UIElement]:
+    """按 (名称, 类型, 位置) 去重，保持原顺序。"""
     seen: set[tuple] = set()
     unique: list[UIElement] = []
     for el in elements:
@@ -250,7 +263,4 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
         if key not in seen:
             seen.add(key)
             unique.append(el)
-
-    for i, el in enumerate(unique, start=1):
-        el.id = i
-    return ElementList(unique, foreground_title=foreground_title)
+    return unique

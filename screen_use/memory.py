@@ -3,12 +3,15 @@
 - 执行轨迹持久化（JSONL）：任务目标、步骤、成败，供后续任务检索参考
 - 词汇映射学习：用户描述 ↔ 实际控件名（如 "乘号" ↔ "Multiply by"），
   成功后自动记录，下次直接命中策略链第 0 级
+- 结构化逐步轨迹（TraceRecorder）：每步落盘「元素表 + 决策 + 结果」，
+  是 desktop-jev 小模型 SFT 的原料（research/desktop-jev/TRAINING.md §1）
 
 存储位置：~/.screen_use/（可用 SCREEN_USE_HOME 环境变量覆盖）
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -122,3 +125,53 @@ class ExperienceStore:
             "successes": successes,
             "vocab_size": len(self._load_vocab()),
         }
+
+
+# ---- 结构化逐步轨迹（desktop-jev 阶段 0：SFT 原料采集） ----
+
+
+class TraceRecorder:
+    """结构化逐步轨迹采集器。
+
+    每个任务一个 JSONL 文件（traces_full/{task_id}.jsonl），每步一行：
+    {goal, step_idx, foreground_title, elements, action, args, ok, detail, ts}
+
+    与 ExperienceStore.record_trace 的区别：record_trace 只存任务级摘要
+    （action+args+ok），供检索；这里存的是**每步的完整观测**（UIA 元素表），
+    是 desktop-jev 小模型的训练原料（research/desktop-jev/TRAINING.md §1）。
+    不存截图（体积可控；需要时按 bbox 重截）。
+    """
+
+    def __init__(self, home: Path | str | None = None):
+        self.dir = (Path(home) if home else _default_home()) / "traces_full"
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self._path: Path | None = None
+        self._goal: str = ""
+
+    def start_task(self, goal: str) -> str:
+        """开始一个任务的采集，返回 task_id（时间戳 + goal 短哈希，文件名安全）。"""
+        digest = hashlib.sha1(goal.encode("utf-8")).hexdigest()[:8]
+        task_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{digest}"
+        self._path = self.dir / f"{task_id}.jsonl"
+        self._goal = goal
+        return task_id
+
+    def record_step(self, step_idx: int, foreground_title: str,
+                    elements: list[dict], action: str, args: dict,
+                    ok: bool, detail: str = "") -> None:
+        """落盘一步观测+决策。须在 start_task 之后调用。"""
+        if self._path is None:
+            raise RuntimeError("record_step 前请先 start_task")
+        entry = {
+            "goal": self._goal,
+            "step_idx": step_idx,
+            "foreground_title": foreground_title,
+            "elements": elements,
+            "action": action,
+            "args": args,
+            "ok": ok,
+            "detail": detail,
+            "ts": time.time(),
+        }
+        with open(self._path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")

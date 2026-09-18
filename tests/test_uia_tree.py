@@ -157,3 +157,19 @@ def test_element_list_carries_foreground_title():
                                  bbox=(0, 0, 1, 1))], foreground_title="记事本")
     assert els.foreground_title == "记事本"
     assert len(els) == 1 and els[0].name == "a"  # 当普通 list 用完全兼容
+
+
+# ---- 配额前去重（2026-09-18 计算器 7/8/9 被配额截掉事故） ----
+
+def test_dedup_by_identity():
+    """(名称, 类型, 位置) 完全重复才去重；类型或位置不同则保留。"""
+    from screen_use.perception.uia_tree import _dedup_by_identity
+
+    els = [
+        UIElement(id=1, name="File", control_type="ButtonControl", bbox=(0, 0, 10, 10)),
+        UIElement(id=2, name="File", control_type="ButtonControl", bbox=(0, 0, 10, 10)),  # 完全重复
+        UIElement(id=3, name="File", control_type="MenuItemControl", bbox=(0, 0, 10, 10)),  # 类型不同
+        UIElement(id=4, name="File", control_type="ButtonControl", bbox=(0, 0, 20, 20)),  # 位置不同
+    ]
+    unique = _dedup_by_identity(els)
+    assert [el.id for el in unique] == [1, 3, 4]

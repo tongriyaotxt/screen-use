@@ -63,3 +63,51 @@ def test_stats(tmp_path):
 def test_tokenize_mixed():
     tokens = _tokenize("打开 Calculator 窗口")
     assert "calculator" in tokens and "打" in tokens and "窗" in tokens
+
+
+# ---- TraceRecorder（desktop-jev 阶段 0） ----
+
+from screen_use.memory import TraceRecorder
+
+
+def test_trace_recorder_round_trip(tmp_path):
+    """落盘一步后可读回：goal/元素表/决策/结果完整，JSON 可序列化往返。"""
+    rec = TraceRecorder(tmp_path / "mem")
+    task_id = rec.start_task("在计算器算 78*9")
+    elements = [
+        {"id": 1, "control_type": "ButtonControl", "name": "Seven",
+         "bbox": [0, 0, 50, 50], "center": [25, 25], "window_title": "计算器"},
+    ]
+    rec.record_step(1, "计算器", elements, "click_id", {"id": 34}, True, "点击元素 #34")
+    rec.record_step(2, "计算器", elements, "done", {"result": "ok"}, True)
+
+    path = tmp_path / "mem" / "traces_full" / f"{task_id}.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    first = json.loads(lines[0])
+    assert first["goal"] == "在计算器算 78*9"
+    assert first["step_idx"] == 1
+    assert first["foreground_title"] == "计算器"
+    assert first["elements"][0]["name"] == "Seven"
+    assert first["action"] == "click_id" and first["args"] == {"id": 34}
+    assert first["ok"] is True and first["detail"] == "点击元素 #34"
+    assert "ts" in first
+
+
+def test_trace_recorder_separate_task_files(tmp_path):
+    """不同任务写入不同文件。"""
+    rec = TraceRecorder(tmp_path / "mem")
+    t1 = rec.start_task("任务A")
+    rec.record_step(1, "w", [], "wait", {}, True)
+    t2 = rec.start_task("任务B")
+    rec.record_step(1, "w", [], "wait", {}, True)
+    assert t1 != t2
+    files = list((tmp_path / "mem" / "traces_full").glob("*.jsonl"))
+    assert len(files) == 2
+
+
+def test_trace_recorder_requires_start_task(tmp_path):
+    import pytest
+    rec = TraceRecorder(tmp_path / "mem")
+    with pytest.raises(RuntimeError, match="start_task"):
+        rec.record_step(1, "w", [], "wait", {}, True)

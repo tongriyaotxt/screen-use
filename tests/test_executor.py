@@ -84,3 +84,33 @@ def test_verify_paste_match_and_mismatch():
     with patch("uiautomation.GetFocusedControl", return_value=_fake_edit("")):
         detail = Executor._verify_paste("中文内容")
         assert "粘贴校验失败" in detail and "set_element_text" in detail
+
+
+# ---- fail-safe 自恢复（2026-09-18 鼠标卡角落事故） ----
+
+def test_failsafe_recovery_moves_to_center_and_retries():
+    """鼠标卡角落触发 FailSafeException 时：移到屏幕中央复位并重试一次。"""
+    import pyautogui as real_gui
+
+    with patch("screen_use.actions.executor.pyautogui") as mock_gui:
+        mock_gui.FailSafeException = real_gui.FailSafeException
+        mock_gui.size.return_value = (2560, 1600)
+        mock_gui.click.side_effect = [real_gui.FailSafeException("卡角落"), None]
+        result = Executor(dry_run=False).click(10, 20)
+    assert result.ok
+    mock_gui.moveTo.assert_called_once_with(1280, 800)  # 复位到屏幕中央
+    assert mock_gui.click.call_count == 2  # 重试了一次
+
+
+def test_failsafe_second_raise_propagates():
+    """重试仍急停（用户主动甩鼠标）时异常放行，不吞掉。"""
+    import pyautogui as real_gui
+
+    import pytest
+
+    with patch("screen_use.actions.executor.pyautogui") as mock_gui:
+        mock_gui.FailSafeException = real_gui.FailSafeException
+        mock_gui.size.return_value = (2560, 1600)
+        mock_gui.click.side_effect = real_gui.FailSafeException("用户急停")
+        with pytest.raises(real_gui.FailSafeException):
+            Executor(dry_run=False).click(10, 20)

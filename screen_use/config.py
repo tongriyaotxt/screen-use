@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # 发给 VLM 的图单独用更小的尺寸可显著降低 TTFT；click_id 路径按元素 id 定位，不依赖分辨率。
     vlm_max_size: int = 896
 
+    # desktop-jev 阶段 0：结构化逐步轨迹采集（元素表+决策逐步落盘到 traces_full/，SFT 原料）
+    record_full_trace: bool = True
+
     @property
     def vlm_available(self) -> bool:
         """VLM 是否可用：本地 Ollama 不需要 API key，云端需要。"""

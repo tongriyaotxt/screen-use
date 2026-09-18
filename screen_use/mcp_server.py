@@ -2,7 +2,7 @@
 
 启动方式：
     python -m screen_use.mcp_server          # stdio 模式（Claude Desktop / Kimi CLI 等）
-    rpa-mcp-server                    # 安装后的命令入口
+    screen-use-mcp                     # 安装后的命令入口
 """
 
 from __future__ import annotations
@@ -160,10 +160,22 @@ def read_screen(question: str) -> str:
 
 
 @mcp.tool()
-def run_task(goal: str, max_steps: int = 40) -> str:
-    """视觉行为循环：自主完成一个桌面任务（如 "打开计算器算 25*4"）。
+def get_capabilities() -> str:
+    """三环能力说明书（cascade protocol）：宿主启动时应先调用。
 
-    循环执行 观察截图→VLM决策→动作→验证，直到完成或达到步数上限。需要配置 VLM。
+    返回各环（skill 宏回放 / task 自主循环 / atomic 原子工具）的 can/cannot、
+    goal 写法要求、升级协议与路由建议。据此把任务拆成各环能干的形状。
+    """
+    return json.dumps(tools.get_capabilities(), ensure_ascii=False)
+
+
+@mcp.tool()
+def run_task(goal: str, max_steps: int = 40) -> str:
+    """自主完成一个桌面任务（如 "打开计算器算 25*4"）。需要配置 VLM。
+
+    先用 get_capabilities 确认本环适用（task.can / task.cannot）。
+    完成返回 {"status": "done", ...}；无法完成返回 EscalationResult
+    （含当前观测快照与建议），宿主可直接接管，无需重新截图。
     """
     return json.dumps(tools.run_task(goal, max_steps=max_steps), ensure_ascii=False)
 

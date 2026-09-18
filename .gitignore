@@ -10,3 +10,8 @@ build/
 
 # demo 脚本临时记事本文件
 scratch_*.txt
+
+# 模型权重与训练日志（体积大，不入库；训练可复现）
+checkpoints/
+checkpoints_smoke/
+*.log

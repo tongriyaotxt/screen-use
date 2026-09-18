@@ -212,7 +212,8 @@ Safety hooks are part of the interface too: `confirm_callback` for human-in-the-
 ## Roadmap
 
 - [x] UIA + SoM locating strategy chain
-- [x] MCP Server (18 tools)
+- [x] MCP Server (19 tools)
+- [x] **Cascade protocol stage A: `get_capabilities` manifest + EscalationResult handoff** (done/escalated envelope with observation snapshot — hosts take over without re-screenshotting) — design: [research/cascade-protocol](research/cascade-protocol/README.md)
 - [x] Batch actions + UIA text read/write + context-safe screenshots (speed overhaul)
 - [x] Local VLM support (Ollama)
 - [x] Kimi Code subscription as VLM backend (OAuth, auto-refreshing token)
@@ -220,6 +221,7 @@ Safety hooks are part of the interface too: `confirm_callback` for human-in-the-
 - [x] Introspection playbook & meta-learning memory
 - [ ] `wait_for_element` / auto-verification primitives
 - [ ] **Experience replay: compile successful traces into parameterized skill macros** (semantic anchors + checkpoints + VLM fallback) — design: [research/experience-replay](research/experience-replay/DESIGN.md)
+- [ ] **Desktop Jev: small calibrated decision model as fast path** (partial VLM replacement for speed; text steps & low-confidence escalate to VLM) — design: [research/desktop-jev](research/desktop-jev/DESIGN.md). Stage 0 done: structured per-step trace recording (`traces_full/`, `RECORD_FULL_TRACE=0` to disable)
 - [ ] Drag & drop
 - [ ] VLM raw-coordinate fallback + OpenCV template matching (UIA-blind apps)
 - [ ] macOS (Accessibility API) & Linux support

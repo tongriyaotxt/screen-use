@@ -315,3 +315,85 @@ def test_screenshot_annotate_falls_back_when_thread_fails(monkeypatch):
                return_value=Image.new("RGB", (800, 600), "white")):
         result = tools.screenshot(annotate=True)
     assert len(result["elements"]) == 3  # 兜底路径仍拿到元素（mock_uia）
+
+
+# ---- 阶段 A：三环协议（get_capabilities + EscalationResult） ----
+
+LOOP_SHOT = {
+    "image_base64": "ZmFrZQ==",
+    "scale": 2.0,
+    "width": 640,
+    "height": 400,
+    "elements": [el.to_dict() for el in FAKE_ELEMENTS],
+}
+
+
+def _vlm_tools(provider) -> ScreenUse:
+    settings = Settings(vision_provider="custom", vision_base_url="http://x/v1",
+                        vision_api_key="k", vision_model="m")
+    return ScreenUse(dry_run=True, settings=settings, provider=provider)
+
+
+class _ScriptProvider(VisionProvider):
+    def __init__(self, script):
+        self.script = script
+        self.calls = 0
+
+    def pick_element(self, image_base64, legend, goal):
+        return -1
+
+    def ask_about_screen(self, image_base64, question):
+        text = self.script[min(self.calls, len(self.script) - 1)]
+        self.calls += 1
+        return text
+
+
+def test_get_capabilities_manifest():
+    caps = _make_tools().get_capabilities()
+    assert set(caps["rings"]) == {"skill", "task", "atomic"}
+    # 诚实标注：skill 未实现、task 当前引擎是 vlm
+    assert caps["rings"]["skill"]["available"] is False
+    assert "vlm" in caps["rings"]["task"]["engine"]
+    # 说明书必须有 cannot（写清不能做什么比能做什么更重要）
+    assert caps["rings"]["task"]["cannot"]
+    assert "escalation" in caps and "routing_hint" in caps
+
+
+def test_run_task_done_returns_status_done():
+    provider = _ScriptProvider(['{"action": "done", "result": "ok"}'])
+    tools = _vlm_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=LOOP_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = tools.run_task("测试完成", max_steps=3)
+    assert result["status"] == "done"
+    assert result["done"] is True and result["result"] == "ok"
+
+
+def test_run_task_max_steps_returns_escalation_with_map():
+    """任务未完成 → EscalationResult：原因分类 + 进度 + 当前观测快照（带地图退）。"""
+    provider = _ScriptProvider(['{"action": "wait", "seconds": 0}'])
+    tools = _vlm_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=LOOP_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = tools.run_task("永远完不成", max_steps=2)
+
+    assert result["status"] == "escalated"
+    assert result["from_ring"] == "task"
+    assert result["reason"]["class"] == "max_steps_reached"
+    assert len(result["progress"]["steps_done"]) == 2
+    assert result["progress"]["remaining_goal"] == "永远完不成"
+    # 观测快照：宿主可直接接管，无需重新截图枚举
+    assert result["observation"]["elements"][0]["name"] == "确定"
+    assert result["suggestion"]
+
+
+def test_run_task_think_error_escalation_class():
+    """VLM 连续返回垃圾 → reason.class = think_error，建议检查 VLM 配置。"""
+    provider = _ScriptProvider(["垃圾输出"] * 10)
+    tools = _vlm_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=LOOP_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = tools.run_task("测试决策失败", max_steps=3)
+    assert result["status"] == "escalated"
+    assert result["reason"]["class"] == "think_error"
+    assert "VLM" in result["suggestion"]

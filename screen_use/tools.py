@@ -66,7 +66,10 @@ class ScreenUse:
 
     @staticmethod
     def _activate_window(el: UIElement) -> None:
-        """点击前把元素所属窗口激活到前台（防止窗口被遮挡时点穿到别的窗口）。"""
+        """点击前把元素所属窗口激活到前台（防止窗口被遮挡时点穿到别的窗口）。
+
+        Windows 焦点抢占防护会让后台进程的 SetForegroundWindow 静默失效，
+        因此激活后必须验证；失效时用 AttachThreadInput 附到前台线程再激活。"""
         if not el.window_handle:
             return
         import ctypes
@@ -77,6 +80,19 @@ class ScreenUse:
         user32.ShowWindow(hwnd, 9)  # SW_RESTORE（若在最小化）
         user32.BringWindowToTop(hwnd)
         user32.SetForegroundWindow(hwnd)
+        if user32.GetForegroundWindow() != hwnd:
+            try:
+                fg = user32.GetForegroundWindow()
+                cur_tid = user32.GetWindowThreadProcessId(fg, None)
+                tgt_tid = user32.GetWindowThreadProcessId(hwnd, None)
+                user32.AttachThreadInput(cur_tid, tgt_tid, True)
+                try:
+                    user32.BringWindowToTop(hwnd)
+                    user32.SetForegroundWindow(hwnd)
+                finally:
+                    user32.AttachThreadInput(cur_tid, tgt_tid, False)
+            except Exception:
+                pass
         time.sleep(0.15)
 
     # ================= 原子工具 =================
@@ -370,10 +386,66 @@ class ScreenUse:
     # ================= 视觉行为循环 =================
 
     def run_task(self, goal: str, max_steps: int = 40, on_step=None) -> dict:
-        """视觉行为循环：observe → think → act → verify，直到任务完成。
+        """自主任务循环：observe → think → act → verify，直到任务完成。
 
         需要 VLM。on_step: 可选回调 fn(Step)，用于实时观察每一步。
+
+        返回协议（cascade protocol §4）：
+        - 完成: {"status": "done", "result": ..., "steps": [...]}
+        - 升级: EscalationResult（带地图退）——宿主据 observation 直接接管，
+          无需重新截图枚举。
         """
         from screen_use.agent import VisualLoop
 
-        return VisualLoop(self, max_steps=max_steps).run(goal, on_step=on_step).to_dict()
+        result = VisualLoop(self, max_steps=max_steps).run(goal, on_step=on_step).to_dict()
+        if result["done"]:
+            return {"status": "done", **result}
+        return self._build_escalation(result)
+
+    def _build_escalation(self, result: dict) -> dict:
+        """任务未完成时构造 EscalationResult（cascade protocol §4 交接包）。"""
+        steps = result.get("steps", [])
+        think_errors = sum(1 for s in steps if s["action"] == "think_error")
+        failures = sum(1 for s in steps if not s["ok"])
+        if think_errors >= 3 and think_errors >= len(steps) // 2:
+            reason = {"class": "think_error",
+                      "detail": f"VLM 决策连续失败 {think_errors}/{len(steps)} 步"}
+            suggestion = "检查 VLM 配置/连接，或宿主用原子工具直接接管。"
+        elif failures > len(steps) * 0.5:
+            reason = {"class": "stuck",
+                      "detail": f"多数动作执行失败（{failures}/{len(steps)}）"}
+            suggestion = "环境可能已变化，宿主根据 observation 判断后接管。"
+        else:
+            reason = {"class": "max_steps_reached",
+                      "detail": f"{len(steps)} 步内未完成"}
+            suggestion = "宿主据 observation 接管剩余步骤，或把目标拆小后重试 run_task。"
+
+        # 带地图退：当前观测快照（元素表），宿主可直接决策下一步
+        observation: dict = {"foreground_title": "", "elements": [],
+                             "error": None}
+        try:
+            observation.update(self.list_ui_elements())
+        except Exception as e:
+            observation["error"] = str(e)
+
+        return {
+            "status": "escalated",
+            "from_ring": "task",
+            "engine": "vlm",
+            "reason": reason,
+            "progress": {
+                "steps_done": steps,
+                "remaining_goal": result["goal"],
+            },
+            "observation": observation,
+            "suggestion": suggestion,
+            # 兼容字段
+            "goal": result["goal"], "done": False, "result": result["result"],
+        }
+
+    # ================= 能力说明书（cascade protocol §3） =================
+
+    def get_capabilities(self) -> dict:
+        """三环能力说明书：宿主启动时调用，据此拆任务与选择工具环。"""
+        from screen_use.capabilities import get_capabilities
+        return get_capabilities()

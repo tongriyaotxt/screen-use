@@ -321,3 +321,54 @@ def test_loop_uses_vlm_max_size():
 def test_vlm_max_size_default():
     """vlm_max_size 默认 896（不读 .env，隔离用户本机配置）。"""
     assert Settings(_env_file=None).vlm_max_size == 896
+
+
+# ---- 结构化轨迹采集（desktop-jev 阶段 0） ----
+
+import json as _json
+
+
+def test_loop_records_full_trace(tmp_path):
+    """run 每步落盘一条结构化轨迹（含元素表与决策），done 步也记录。"""
+    from screen_use.memory import ExperienceStore
+
+    provider = ScriptProvider([
+        '{"thought": "点击按钮1", "action": "click_id", "id": 1}',
+        '{"thought": "已完成", "action": "done", "result": "点完了"}',
+    ])
+    tools = _loop_tools(provider)
+    tools.list_ui_elements()  # 填充 click_element_id 的缓存
+    memory = ExperienceStore(tmp_path / "mem")
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=5, memory=memory).run("点一下1号按钮")
+    assert result.done is True
+
+    files = list((tmp_path / "mem" / "traces_full").glob("*.jsonl"))
+    assert len(files) == 1
+    steps = [_json.loads(l) for l in files[0].read_text(encoding="utf-8").splitlines()]
+    assert [s["action"] for s in steps] == ["click_id", "done"]
+    assert steps[0]["elements"] == FAKE_SHOT["elements"]
+    assert steps[0]["goal"] == "点一下1号按钮"
+    assert steps[0]["args"] == {"id": 1} and steps[0]["ok"] is True
+
+
+def test_loop_record_full_trace_disabled(tmp_path):
+    """record_full_trace=False 时不产生 traces_full 目录。"""
+    from screen_use.memory import ExperienceStore
+
+    provider = ScriptProvider(['{"action": "done", "result": "ok"}'])
+    settings = _vlm_settings()
+    settings.record_full_trace = False
+    tools = ScreenUse(dry_run=True, settings=settings, provider=provider)
+    memory = ExperienceStore(tmp_path / "mem")
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=2, memory=memory).run("关闭采集")
+    assert result.done is True
+    assert not (tmp_path / "mem" / "traces_full").exists()
+
+
+def test_record_full_trace_default():
+    """record_full_trace 默认开启（不读 .env，隔离用户本机配置）。"""
+    assert Settings(_env_file=None).record_full_trace is True

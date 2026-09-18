@@ -34,13 +34,27 @@ class Executor:
         self.history.append(result)
         return result
 
+    def _mouse_op(self, fn, action: str, detail: str) -> ActionResult:
+        """鼠标操作 + fail-safe 自恢复。
+
+        鼠标卡在屏幕角落时 pyautogui 的每次调用都抛 FailSafeException（越界坐标被钳到边缘后
+        的连锁状态）。先移到屏幕中央复位再重试一次；若用户正主动甩鼠标急停，第二次仍会抛出。"""
+        if self.dry_run:
+            return self._record(action, detail)
+        try:
+            fn()
+        except pyautogui.FailSafeException:
+            w, h = pyautogui.size()
+            pyautogui.moveTo(w // 2, h // 2)
+            fn()  # 重试一次；用户主动急停时此处再次抛出，放行
+        return self._record(action, detail)
+
     # ---- 鼠标 ----
 
     def click(self, x: int, y: int, button: str = "left", clicks: int = 1) -> ActionResult:
         detail = f"({x}, {y}) button={button} clicks={clicks}"
-        if not self.dry_run:
-            pyautogui.click(x, y, clicks=clicks, button=button)
-        return self._record("click", detail)
+        return self._mouse_op(lambda: pyautogui.click(x, y, clicks=clicks, button=button),
+                              "click", detail)
 
     def double_click(self, x: int, y: int) -> ActionResult:
         return self.click(x, y, clicks=2)
@@ -49,17 +63,15 @@ class Executor:
         return self.click(x, y, button="right")
 
     def move_to(self, x: int, y: int) -> ActionResult:
-        if not self.dry_run:
-            pyautogui.moveTo(x, y)
-        return self._record("move_to", f"({x}, {y})")
+        return self._mouse_op(lambda: pyautogui.moveTo(x, y), "move_to", f"({x}, {y})")
 
     def scroll(self, clicks: int, x: int | None = None, y: int | None = None) -> ActionResult:
         """clicks 正数向上滚，负数向下滚。"""
-        if not self.dry_run:
+        def op():
             if x is not None and y is not None:
                 pyautogui.moveTo(x, y)
             pyautogui.scroll(clicks)
-        return self._record("scroll", f"clicks={clicks}")
+        return self._mouse_op(op, "scroll", f"clicks={clicks}")
 
     # ---- 键盘 ----
 
