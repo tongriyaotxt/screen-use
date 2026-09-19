@@ -219,6 +219,72 @@ def test_estimate_elements_counts_all_widget_kinds():
     assert mock_v3.estimate_elements(spec) == 19
 
 
+# ---- 尺度验收：v3 的观测要真的贴到真实桌面的量级 ----
+
+def test_v3_observation_scale_matches_real_desktop():
+    """元素数中位要落在真实桌面量级（84）附近；v2 只有 14。
+
+    token 量级由 `mock_v3.py --estimate-only` 报（需 tokenizer，测试里不加载 transformers）。
+    """
+    rng = random.Random(31)
+    specs = [mock_v3.build_episode(rng, ep, target_elements=85)[:2]
+             for ep in range(1, 41)]
+    report = mock_v3.scale_report(specs)          # 不传 ckpt → 只算元素数
+    assert 75 <= report["elements_p50"] <= 100
+    assert report["elements_min"] >= 70
+
+
+# ---- 数据通路验收：v3 形状的轨迹喂给训练侧不能出错 ----
+
+def test_v3_traces_survive_training_data_path(tmp_path):
+    """按 v3 的观测尺度造一条合成轨迹，走一遍 iter_samples：
+
+    - 样本数 = 动作集内的步数
+    - elem_slot 必须指向 gold 元素（不是 no-element 槽）
+    - 元素数不能超过 MAX_ELEMENTS_PER_SAMPLE（超了标签会被静默截断）
+    """
+    import json
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from training.common import MAX_ELEMENTS_PER_SAMPLE, iter_samples
+
+    rng = random.Random(32)
+    spec, goal, steps = mock_v3.build_episode(rng, 1, target_elements=85)
+    elements = mock_v3.synthesize_elements(spec)
+    assert len(elements) <= MAX_ELEMENTS_PER_SAMPLE
+
+    path = tmp_path / "mock-v3-test-0001.jsonl"
+    with open(path, "w", encoding="utf-8") as f:
+        for idx, (action, target, value) in enumerate(steps, 1):
+            args = {}
+            if action == "click_id":
+                hit = next((e for e in elements if e["name"] == target), None)
+                if hit is None:
+                    continue
+                args = {"id": hit["id"]}
+            elif action == "type":
+                hit = next((e for e in elements if e["name"] == target), None)
+                args = {"text": value, "element_id": hit["id"] if hit else None}
+            elif action == "blocked":
+                args = {"reason": value}
+            f.write(json.dumps({
+                "goal": goal, "step_idx": idx, "foreground_title": "MockUI",
+                "elements": elements, "action": action, "args": args,
+                "ok": True, "detail": f"{action} {target}",
+                "source": "mock_oracle", "quality": "gold", "ts": 0.0,
+            }, ensure_ascii=False) + "\n")
+
+    samples = iter_samples([tmp_path])
+    assert samples, "iter_samples 没产出样本"
+    for s in samples:
+        assert s["n_elements"] == len(elements)
+        if s["op"] in ("CLICK", "TYPE"):
+            assert s["elem_slot"] < len(elements), "gold 元素槽位应当命中具体元素"
+    assert samples[0]["goal"] == goal
+    assert samples[0]["history"] == []             # 第一步没有历史
+
+
 # ---- 真 Qt 布局体检（offscreen，不开窗） ----
 # v3 给面板显式坐标、按钮自动落到输入区下方——算错就会叠控件或被判 offscreen，
 # UIA 看不到 → oracle 量产那天集体失败。这里用 offscreen 平台把布局钉死。

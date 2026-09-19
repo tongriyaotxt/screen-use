@@ -275,6 +275,67 @@ def semantic_goal(goal: str, steps: list, rng: random.Random, prob: float = 0.7)
     return goal
 
 
+def synthesize_elements(spec: dict) -> list[dict]:
+    """按 spec 合成「UIA 会看到的」元素表（**离线估算尺度用**，不执行任何动作）。
+
+    面板内部的行/单元格（树节点、表格单元、列表项、菜单项）在 Qt 里是 model item
+    而不是 QWidget，真实运行时由 UIA 逐个暴露；这里按同样的名字/类型合成出来，
+    bbox 用占位数——只为把「元素数 / token 数」量到真实桌面的量级上做验收，
+    不参与任何轨迹落盘。
+    """
+    def el(i, name, ctype, x, y):
+        return {"id": i, "name": name, "control_type": ctype,
+                "bbox": [x, y, x + 120, y + 30], "center": [x + 60, y + 15],
+                "window_title": "MockUI"}
+
+    out: list[dict] = []
+    n = 0
+    y = 260
+    for name in spec.get("fields", []):
+        n += 1
+        out.append(el(n, name, "EditControl", 20, y))
+        y += 45
+    for name in spec.get("checks", []):
+        n += 1
+        out.append(el(n, name, "CheckBoxControl", 20, y))
+        y += 32
+    for name in (spec.get("radios") or {}).get("items", []):
+        n += 1
+        out.append(el(n, name, "RadioButtonControl", 250, y))
+    if spec.get("combo"):
+        n += 1
+        out.append(el(n, spec["combo"]["name"], "ComboBoxControl", 500, 260))
+        for item in spec["combo"]["items"]:
+            n += 1
+            out.append(el(n, item, "ListItemControl", 500, y))
+    if spec.get("list"):
+        n += 1
+        out.append(el(n, "项目列表", "ListControl", 240, 40))
+        for item in spec["list"]["items"]:
+            n += 1
+            out.append(el(n, item, "ListItemControl", 240, y))
+    for parent, children in (spec.get("tree") or {}).items():
+        n += 1
+        out.append(el(n, parent, "TreeItemControl", 10, 40))
+        for child in children:
+            n += 1
+            out.append(el(n, child, "TreeItemControl", 30, y))
+    for row in spec.get("table") or []:
+        for cell in row:
+            n += 1
+            out.append(el(n, cell, "DataItemControl", 470, y))
+    for menu, items in (spec.get("menu") or {}).items():
+        n += 1
+        out.append(el(n, menu, "MenuItemControl", 0, 0))
+        for item in items:
+            n += 1
+            out.append(el(n, item, "MenuItemControl", 0, 20))
+    for name, _enabled in spec.get("buttons", []):
+        n += 1
+        out.append(el(n, name, "ButtonControl", 20, y))
+    return out
+
+
 def build_episode(rng: random.Random, index: int, target_elements: int = 85,
                   bilingual_prob: float = 0.5, semantic_prob: float = 0.8) -> tuple[dict, str, list]:
     """一个 v3 回合：v2 模板 → densify → bilingual → semantic goal。"""
@@ -301,6 +362,44 @@ def estimate_elements(spec: dict) -> int:
     return n
 
 
+def scale_report(specs: list[tuple[dict, str]], ckpt: str = "") -> dict:
+    """v3 观测尺度验收：元素数 / token 数 vs 真实桌面与 v2 的参照值。
+
+    参照（2026-09-19 实测）：真实桌面 元素中位 84 / token 中位 2380；
+    mock v2 训练集 元素中位 14 / token 中位 457。v3 的目标是贴近前者。
+    """
+    import statistics
+
+    from training.common import serialize_observation
+
+    tok = None
+    if ckpt:
+        try:
+            from training.dataset import build_tokenizer
+
+            tok = build_tokenizer(ckpt)
+        except Exception:  # noqa: BLE001 - 估不了 token 就只报元素数
+            tok = None
+
+    n_elems, n_tokens = [], []
+    for spec, goal in specs:
+        els = synthesize_elements(spec)
+        n_elems.append(len(els))
+        if tok is not None:
+            text = serialize_observation(goal, "MockUI", els, [])
+            n_tokens.append(len(tok(text, truncation=True, max_length=4096)["input_ids"]))
+    return {
+        "n": len(specs),
+        "elements_p50": statistics.median(n_elems) if n_elems else 0,
+        "elements_min": min(n_elems) if n_elems else 0,
+        "elements_max": max(n_elems) if n_elems else 0,
+        "tokens_p50": statistics.median(n_tokens) if n_tokens else 0,
+        "tokens_max": max(n_tokens) if n_tokens else 0,
+        "ref_real": {"elements_p50": 84, "tokens_p50": 2380},
+        "ref_v2": {"elements_p50": 14, "tokens_p50": 457},
+    }
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser()
@@ -311,7 +410,23 @@ def main() -> None:
                         help="目标元素数（真实桌面中位 84；v2 只有 14）")
     parser.add_argument("--bilingual-prob", type=float, default=0.5)
     parser.add_argument("--out", default="", help="默认 ~/.screen_use/traces_mock_v3")
+    parser.add_argument("--estimate-only", action="store_true",
+                        help="不开窗：只报观测尺度（元素/token）并与真实/v2 对照")
+    parser.add_argument("--ckpt", default="checkpoints/jev-Qwen3-0.6B-e3",
+                        help="算 token 用的 tokenizer 来源（--estimate-only）")
     args = parser.parse_args()
+
+    if args.estimate_only:
+        rng = random.Random(args.seed)
+        specs = []
+        for ep in range(1, 41):
+            spec, goal, _ = build_episode(rng, ep, args.target_elements,
+                                          args.bilingual_prob)
+            specs.append((spec, goal))
+        import json
+
+        print(json.dumps(scale_report(specs, args.ckpt), ensure_ascii=False, indent=1))
+        return
 
     from PySide6.QtWidgets import QApplication
 

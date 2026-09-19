@@ -67,6 +67,37 @@ def latest_ckpt(base: Path, epochs: int) -> Path | None:
     return candidates[-1] if candidates else None
 
 
+def estimate_training(data_dirs: list[Path], tokenizer_base: str, epochs: int) -> str:
+    """粗估训练时长：按 token 量线性外推（v0 实测 3100 样本 × 525 token = 531 s/epoch）。
+
+    只为了让人安排"离开多久"，不追求准；真实耗时以训练日志里的每 epoch 打印为准。
+    """
+    try:
+        sys.path.insert(0, str(ROOT))
+        from training.common import iter_samples, serialize_observation
+        from training.dataset import build_tokenizer
+
+        tok = build_tokenizer(tokenizer_base)
+        total_samples, total_tokens, per_sample = 0, 0, []
+        for d in data_dirs:
+            ss = iter_samples([d])
+            total_samples += len(ss)
+            for s in ss[:200]:
+                per_sample.append(len(tok(serialize_observation(
+                    s["goal"], s["foreground"], s["elements"], s["history"]))["input_ids"]))
+            if per_sample:
+                total_tokens += (sum(per_sample) / len(per_sample)) * len(ss)
+        if not total_samples:
+            return "无数据"
+        avg_tokens = total_tokens / total_samples
+        # v0：3100 样本、525 token/样本、531 s/epoch → 0.326 µs·epoch⁻¹/token
+        seconds = total_tokens * 531 / (3100 * 525)
+        return (f"{total_samples} 样本 · 均 {avg_tokens:.0f} token/样本 · "
+                f"预计 ~{seconds * epochs / 60:.0f} 分钟 / {epochs} epoch（v0 为 3100×525 → 3×531s）")
+    except Exception as e:  # noqa: BLE001 - 估时失败不该挡住流水线
+        return f"(估时失败: {e})"
+
+
 def md_table(rows: list[tuple[str, str]]) -> str:
     return "\n".join(f"| {k} | {v} |" for k, v in rows)
 
@@ -149,6 +180,11 @@ def _pipeline(args, log, report: list, stamp: str, v3_dir: Path) -> None:
         if d.exists():
             data_args += ["--data", str(d)]
     report.append(("训练数据", " + ".join(Path(a).name for a in data_args[1::2])))
+    dirs = [Path(a) for a in data_args[1::2]]
+    if dirs:
+        estimate = estimate_training(dirs, args.base, args.epochs)
+        report.append(("训练时长预估", estimate))
+        print(f"训练时长预估：{estimate}", flush=True)
     if not args.skip_train:
         code = run_step(
             f"训练（{args.base}，{args.epochs} epoch）",

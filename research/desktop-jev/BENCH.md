@@ -166,11 +166,22 @@ COM 往返。**节点数不是瓶颈，每节点成本才是。**
 
 用法（**要开窗，owner 离开时跑**）：
 ```
-./.venv/Scripts/python.exe scripts/mock_v3.py --episodes 2000 --seed 7
-# → ~/.screen_use/traces_mock_v3/（gold）
-./.venv/Scripts/python.exe -m training.train --data ~/.screen_use/traces_mock --data ~/.screen_use/traces_mock_v3 --data ~/.screen_use/traces_full --epochs 3
-./.venv/Scripts/python.exe scripts/eval_offline.py --ckpt <new-ckpt> --data ~/.screen_use/traces_full   # 真实域复测
+./.venv/Scripts/python.exe scripts/mock_v3.py --estimate-only   # 先离线看尺度（不开窗）
+./.venv/Scripts/python.exe scripts/run_pipeline.py --i-am-away --episodes 1000 --epochs 2
 ```
+
+**尺度验收（离线可验，不用开窗）**：`mock_v3.py --estimate-only` 报
+
+| | 元素数中位 | token 中位 |
+|---|---|---|
+| mock v2（旧训练集） | 14 | 457 |
+| **mock v3（新）** | **87** | **2206** |
+| 真实桌面（目标） | 84 | 2380 |
+
+**时长预算**：v0 是 3100 样本 × 497 token → 3 epoch 实测 26 分钟；
+v3 每回合约 3 步、每步 ~2200 token，所以 **1000 回合 ≈ 3000 样本 → 2 epoch 约 1.2 小时**，
+3000 回合 3 epoch 约 5 小时。建议先 `--episodes 1000 --epochs 2` 验证"分布对齐是否真的
+把真实域指标抬起来"，再决定扩量。`run_pipeline.py` 会自己按 token 量估时并打印。
 
 ## 8. 诚实边界
 
