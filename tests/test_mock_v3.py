@@ -234,6 +234,22 @@ def test_v3_observation_scale_matches_real_desktop():
     assert report["elements_min"] >= 70
 
 
+def test_v3_unnamed_icon_ratio_matches_real():
+    """真实桌面 11% 的元素无名（图标按钮，全是 ButtonControl）。
+
+    v2 是 0%——模型会以为"每个控件都有名字"。v3 按同量级掺无名控件。
+    """
+    import statistics
+
+    rng = random.Random(33)
+    ratios = []
+    for ep in range(1, 31):
+        spec, _, _ = mock_v3.build_episode(rng, ep, target_elements=85)
+        els = mock_v3.synthesize_elements(spec)
+        ratios.append(sum(1 for e in els if not e["name"].strip()) / len(els))
+    assert 0.06 <= statistics.median(ratios) <= 0.20, f"无名占比 {statistics.median(ratios):.0%}"
+
+
 # ---- 数据通路验收：v3 形状的轨迹喂给训练侧不能出错 ----
 
 def test_v3_traces_survive_training_data_path(tmp_path):

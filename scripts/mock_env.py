@@ -142,13 +142,17 @@ class MockWindow(QWidget):
             self.listbox = lb
             self.list_items = items
 
-        # 按钮（含禁用态与联动逻辑）；大布局用多列，且自动落在输入区下方（不叠控件）
+        # 按钮（含禁用态与联动逻辑）；尺寸/间距/列数可由 spec 指定（默认与 v2 一致），
+        # 大布局用更小的按钮 + 多列，才能在窗口里塞下足够的控件而不越界
         bx0, by0 = spec.get("button_pos", (20, 280))
+        bw, bh = spec.get("button_size", (120, 34))
+        gap_x, gap_y = spec.get("button_gap", (20, 11))
         cols = max(1, int(spec.get("button_cols", 3)))
         by0 = max(by0, y + 10)
         for i, (name, enabled) in enumerate(spec.get("buttons", [])):
             b = QPushButton(name, self)
-            b.setGeometry(bx0 + (i % cols) * 140, by0 + (i // cols) * 45, 120, 34)
+            b.setGeometry(bx0 + (i % cols) * (bw + gap_x),
+                          by0 + (i // cols) * (bh + gap_y), bw, bh)
             b.setEnabled(enabled)
             self.buttons[name] = b
             self.widgets[name] = b

@@ -37,13 +37,18 @@ from screen_use.memory import _default_home  # noqa: E402
 
 # ==================== 词池 ====================
 
-# 干扰控件：真实应用里大量存在的、跟当前任务无关的东西（含无名控件——真实元素表里很多）
+# 干扰控件：真实应用里大量存在的、跟当前任务无关的东西
 DISTRACTOR_BUTTONS = [
     "File", "Edit", "View", "Help", "Refresh", "Export CSV", "Import", "Settings",
     "Profile", "Notifications", "Sync", "Filters", "Sort", "Columns", "Zoom In",
     "Zoom Out", "Fullscreen", "Share", "Print Preview", "Duplicate", "Archive",
-    "Mark as Read", "Pin", "Collapse All", "Expand All", "", "", "",
+    "Mark as Read", "Pin", "Collapse All", "Expand All",
 ]
+
+# 图标按钮：真实桌面 **11% 的元素是无名的**（实测 traces_full，全是 ButtonControl，即 toolbar/
+# 窗口按钮这类只有图标没有文字的控件），gold 目标里 0 个无名。v3 按同样比例掺无名控件，
+# 否则模型会以为"每个控件都有名字"，遇到图标就抓瞎。
+DISTRACTOR_ICONS_PER_EPISODE = 6
 DISTRACTOR_FIELDS = [
     "Search", "Filter", "Quick find", "Address", "Comments", "Tags", "Reference",
     "Notes", "Region", "Timezone", "",
@@ -108,11 +113,13 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
     # 勾选单选 420–580 / 按钮 590–635。子节点必须展开（折叠的 UIA 看不到）。
     if big or mid:
         spec.update({
-            "size": (860, 640), "menu_pos": (0, 0, 860, 28),
-            "tree_pos": (700, 40, 150, 230), "list_pos": (520, 40, 170, 230),
-            "table_pos": (10, 40, 500, 230), "field_y0": 280,
-            "combo_pos": (700, 285, 140, 30),
-            "button_pos": (10, 0), "button_cols": 6, "expand_tree": True,
+            "size": (860, 700), "menu_pos": (0, 0, 860, 28),
+            "tree_pos": (700, 40, 150, 190), "list_pos": (520, 40, 170, 190),
+            "table_pos": (10, 40, 500, 190), "field_y0": 250,
+            "combo_pos": (700, 255, 140, 30),
+            "button_pos": (10, 0), "button_cols": 8,
+            "button_size": (90, 26), "button_gap": (10, 8),
+            "expand_tree": True,
         })
 
     def est() -> int:
@@ -163,6 +170,13 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
         for name in extra[:max(0, n)]:
             spec.setdefault("buttons", []).append((name, True))
 
+    def add_icon_buttons(n: int) -> None:
+        """无名图标按钮：对齐真实桌面 11% 的无名元素比例（Qt 空文本按钮 UIA Name 为空）。"""
+        if not mid:
+            return
+        for _ in range(max(0, n)):
+            spec.setdefault("buttons", []).append(("", True))
+
     def add_fields(n: int) -> None:
         """输入框最多 3 个：它们从 field_y0 往下排，多到压住按钮区就会叠控件。"""
         if not mid:
@@ -172,6 +186,9 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
         pool = [f for f in DISTRACTOR_FIELDS if f not in fields]
         rng.shuffle(pool)
         spec["fields"] = fields + pool[:max(0, min(n, room))]
+
+    # 无名图标控件先加（它是对齐真实分布的形状，不是填充料——不能被"够了就停"跳过）
+    add_icon_buttons(DISTRACTOR_ICONS_PER_EPISODE if big else 4)
 
     # 按性价比排序逐档加料，够了就停（避免把 84 元素的真实分布做成 120）
     for step in (lambda: add_tree(4, 4), lambda: add_table(4), lambda: add_menu(2),
