@@ -99,6 +99,13 @@ class UIElement:
     window_title: str = ""
     window_handle: int = 0
     pid: int = 0
+    # 会话级持久 id 与状态位（配额筛完后由 _annotate_state 填；None = 读不到/未知，
+    # **不等于 false**——见 screen_use/observation.py 的 FORMAT_VERSION 说明）
+    runtime_id: tuple | None = None
+    disabled: bool | None = None
+    checked: bool | None = None
+    expanded: bool | None = None
+    selected: bool | None = None
     extra: dict = field(default_factory=dict)
     control: Any = field(default=None, repr=False, compare=False)  # UIA 控件对象（供文本读写，不序列化）
 
@@ -121,6 +128,11 @@ class UIElement:
             "center": list(self.center),
             "window_title": self.window_title,
             "pid": self.pid,
+            "disabled": self.disabled,
+            "checked": self.checked,
+            "expanded": self.expanded,
+            "selected": self.selected,
+            "runtime_id": list(self.runtime_id) if self.runtime_id else None,
         }
 
 
@@ -400,6 +412,11 @@ def list_ui_elements(max_elements: int | None = MAX_ELEMENTS,
 
     for i, el in enumerate(unique, start=1):
         el.id = i
+    # 状态位在**配额筛完之后**才读：逐节点读会让观测多花 4×0.3ms×437 节点 ≈ 0.5s，
+    # 而只读最终保留的 ~90 个元素实测只要 ~100ms（整轮的 5%，见
+    # scripts/measure_state_read.py）。缓存命中的窗口元素也在这里重读，
+    # 所以状态不会跟着 2s 的窗口缓存变陈旧。
+    state_ms = _annotate_state(unique)
     timings = {
         "total_ms": round((time.perf_counter() - t_start) * 1000, 1),
         "windows_ms": round(windows_ms, 1),
@@ -409,9 +426,60 @@ def list_ui_elements(max_elements: int | None = MAX_ELEMENTS,
         "skipped": skipped,
         "reused": reused,
         "cache_entries": len(_WINDOW_CACHE),
+        "state_ms": round(state_ms, 1),
         "windows": per_window_stats,
     }
     return ElementList(unique, foreground_title=foreground_title, timings=timings)
+
+
+def _annotate_state(elements: list[UIElement]) -> float:
+    """给最终元素表补 RuntimeId 与状态位；返回耗时（毫秒）。
+
+    这些字段有两个用途，都是新方向的地基：
+    1. **会话级持久 id**（`observation.SessionIds`）靠 RuntimeId 认"同一个控件"，
+       没有它就只能退化成按名字+位置猜，UI 一改就漂；
+    2. **④b 观测格式**里的状态位（d/c/e/s）——「先选中才能删」这类决策没有它就是瞎猜。
+    读不到就如实留 None（**未知 ≠ false**，格式 v2 用版本号区分这两种语义）。
+    """
+    t0 = time.perf_counter()
+    for el in elements:
+        ctrl = el.control
+        if ctrl is None:
+            _mark_state_unknown(el)
+            continue
+        try:
+            # RuntimeId 与 IsEnabled 是"这个元素还活着吗"的探针：两者都读不到，
+            # 说明窗口关了/控件没了 → **整条状态未知**（区别于"不适用"，见下）
+            el.runtime_id = tuple(int(v) for v in ctrl.GetRuntimeId())
+            el.disabled = not bool(ctrl.IsEnabled)
+        except Exception:
+            _mark_state_unknown(el)
+            continue
+        # 其余三个：**不支持该 pattern = 该状态不适用 = False**，不是未知。
+        # 实测（2026-09-19 现场）：按钮不支持 TogglePattern，若把"不适用"当"未知"，
+        # 66 个元素会全部序列化成 `?`，那等于把状态位白采了还污染数据。
+        el.checked = bool(_pattern_state(ctrl, "GetTogglePattern", "ToggleState",
+                                         {1: True, 0: False}))
+        el.expanded = bool(_pattern_state(ctrl, "GetExpandCollapsePattern",
+                                          "ExpandCollapseState", {0: True, 1: False}))
+        el.selected = bool(_pattern_state(ctrl, "GetSelectionItemPattern", "IsSelected",
+                                          {True: True, False: False}))
+    return (time.perf_counter() - t0) * 1000
+
+
+def _mark_state_unknown(el: UIElement) -> None:
+    """元素读不到时，四个状态位一律 None（= 未知，不是 false）。"""
+    el.runtime_id = None
+    el.disabled = el.checked = el.expanded = el.selected = None
+
+
+def _pattern_state(ctrl, getter: str, attr: str, mapping: dict):
+    """读一个 UIA pattern 状态；不支持/读不到 → None（未知）。"""
+    try:
+        value = getattr(getattr(ctrl, getter)(), attr)
+    except Exception:
+        return None
+    return mapping.get(value)
 
 
 def _window_cost(win) -> float:
