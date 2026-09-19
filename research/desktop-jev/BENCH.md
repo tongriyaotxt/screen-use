@@ -153,6 +153,25 @@ COM 往返。**节点数不是瓶颈，每节点成本才是。**
 → **压缩只能靠学出来的检索器，不能靠字符串匹配**；顺带说明 mock 的 goal 措辞过于"照抄元素名"，
 本身就是要修的分布偏差。
 
+### 7.1 mock v3 生成器（已实现，待量产）
+
+冲着上面三个差距写的（`scripts/mock_v3.py`，复用 v2 的窗口构建与 oracle 执行）：
+
+| 改动 | v2 | v3 |
+|---|---|---|
+| 观测尺度 | 元素中位 14 | **中位 87**（`--target-elements 85`，对齐真实 84）——靠树/表/菜单/工具条干扰控件装量 |
+| 目标措辞 | 100% 引用控件名（「保存」） | **语义表述**（"把刚才的改动存下来"），数据值/字段名仍照实引用（真实用户也这么说） |
+| 命名语言 | 全中文 | 中英混排（保存→Save、确定→OK…映射确定性，模型学得到），逼出"中文目标 ↔ 英文控件" |
+| 标签质量 | gold | gold（改名同步改 oracle 步骤；`densify` 只加不覆盖模板面板，测试锁死"目标必在 spec 里"） |
+
+用法（**要开窗，owner 离开时跑**）：
+```
+./.venv/Scripts/python.exe scripts/mock_v3.py --episodes 2000 --seed 7
+# → ~/.screen_use/traces_mock_v3/（gold）
+./.venv/Scripts/python.exe -m training.train --data ~/.screen_use/traces_mock --data ~/.screen_use/traces_mock_v3 --data ~/.screen_use/traces_full --epochs 3
+./.venv/Scripts/python.exe scripts/eval_offline.py --ckpt <new-ckpt> --data ~/.screen_use/traces_full   # 真实域复测
+```
+
 ## 8. 诚实边界
 
 1. **VLM 侧样本只有 10 步**（按 API 预算抽的 4 个回合）。它的时延量级稳（p50 6.0 s），

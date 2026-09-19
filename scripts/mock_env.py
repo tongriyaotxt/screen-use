@@ -74,7 +74,13 @@ class MockWindow(QWidget):
         # 保留键盘焦点能力，否则下拉弹层/菜单弹层会因无焦点瞬关）。
         # 注意 Qt 坐标是逻辑像素（本机 1280×800），放物理坐标会把窗口甩出屏幕外。
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        self.setGeometry(rng.randint(820, 1000), rng.randint(450, 620), 460, 340)
+        # 窗口尺寸可由 spec 指定（mock v3 用大窗口装 40–120 个控件，对齐真实应用尺度）。
+        # 大窗口贴左上角，小窗口仍放右下角角落（owner 在机时的零干扰布局）。
+        w, h = spec.get("size", (460, 340))
+        if w > 700 or h > 500:
+            self.setGeometry(rng.randint(10, 80), rng.randint(10, 60), w, h)
+        else:
+            self.setGeometry(rng.randint(820, 1000), rng.randint(450, 620), w, h)
 
         self.widgets: dict[str, QWidget] = {}   # name -> widget（按 UIA 可见名索引）
         self.buttons: dict[str, QPushButton] = {}
@@ -85,7 +91,7 @@ class MockWindow(QWidget):
 
     def _build(self):
         rng, spec = self.rng, self.spec
-        y = 30
+        y = spec.get("field_y0", 30)
         for name in spec.get("fields", []):
             e = QLineEdit(self)
             e.setAccessibleName(name)
@@ -100,7 +106,7 @@ class MockWindow(QWidget):
             c = QComboBox(self)
             c.addItems(spec["combo"]["items"])
             c.setAccessibleName(spec["combo"]["name"])
-            c.setGeometry(rng.randint(250, 300), 30, 130, 30)
+            c.setGeometry(*spec.get("combo_pos", (rng.randint(250, 300), 30, 130, 30)))
             self.widgets[spec["combo"]["name"]] = c
             self.combo = c
         else:
@@ -124,14 +130,17 @@ class MockWindow(QWidget):
             lb = QListWidget(self)
             lb.addItems(items)
             lb.setAccessibleName("项目列表")
-            lb.setGeometry(280, 90, 150, 180)
+            lb.setGeometry(*spec.get("list_pos", (280, 90, 150, 180)))
             self.listbox = lb
             self.list_items = items
 
-        # 按钮（含禁用态与联动逻辑）
+        # 按钮（含禁用态与联动逻辑）；大布局用多列，且自动落在输入区下方（不叠控件）
+        bx0, by0 = spec.get("button_pos", (20, 280))
+        cols = max(1, int(spec.get("button_cols", 3)))
+        by0 = max(by0, y + 10)
         for i, (name, enabled) in enumerate(spec.get("buttons", [])):
             b = QPushButton(name, self)
-            b.setGeometry(20 + (i % 3) * 140, 280 + (i // 3) * 45, 120, 34)
+            b.setGeometry(bx0 + (i % cols) * 140, by0 + (i // cols) * 45, 120, 34)
             b.setEnabled(enabled)
             self.buttons[name] = b
             self.widgets[name] = b
@@ -159,7 +168,7 @@ class MockWindow(QWidget):
         if spec.get("menu"):
             from PySide6.QtWidgets import QMenuBar
             bar = QMenuBar(self)
-            bar.setGeometry(0, 0, 460, 28)
+            bar.setGeometry(*spec.get("menu_pos", (0, 0, 460, 28)))
             self.menubar = bar
             for menu_name, items in spec["menu"].items():
                 m = bar.addMenu(menu_name)
@@ -173,7 +182,7 @@ class MockWindow(QWidget):
             tw = QTreeWidget(self)
             tw.setHeaderHidden(True)
             tw.setAccessibleName("导航树")
-            tw.setGeometry(20, 90, 180, 170)
+            tw.setGeometry(*spec.get("tree_pos", (20, 90, 180, 170)))
             for parent, children in spec["tree"].items():
                 p = QTreeWidgetItem([parent])
                 for c in children:
@@ -186,7 +195,7 @@ class MockWindow(QWidget):
             rows = spec["table"]
             tb = QTableWidget(len(rows), len(rows[0]), self)
             tb.setAccessibleName("数据表格")
-            tb.setGeometry(20, 90, 400, 180)
+            tb.setGeometry(*spec.get("table_pos", (20, 90, 400, 180)))
             for r, row in enumerate(rows):
                 for c, val in enumerate(row):
                     tb.setItem(r, c, QTableWidgetItem(val))

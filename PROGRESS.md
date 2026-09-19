@@ -16,6 +16,7 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
+| 09-19 | **mock v3 生成器 + 一条命令流水线**（尺度/语义/双语对齐真实分布） | `scripts/mock_v3.py`、`scripts/run_pipeline.py`、`tests/test_mock_v3.py` |
 | 09-19 | **真实域泛化首测（R4）**：joint_acc 0.17 / 升级率 90% → 加训练分布门控 | `screen_use/jev_bridge.py::ood_check`、`training/calibrate.py::train_stats`、`assets/bench/offline_eval_realdomain.json` |
 | 09-19 | **后台窗口元素表缓存 + 点击前 bbox 校验**（观测 326ms → 153ms） | `screen_use/perception/uia_tree.py`、`tools.py::_fresh_element` |
 | 09-19 | **阶段 4 接入 + 北极星首测**（1.74×，报告见 BENCH.md） | `screen_use/jev_bridge.py`、`agent.py`、`scripts/bench_jev.py`、`scripts/eval_offline.py`、`scripts/smoke_jev_loop.py`、`scripts/bench_gui.py` |
@@ -57,12 +58,18 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 ## 下一步（优先级 A > B > C，等 owner 指示或直接按 A 继续）
 
-- **A 补数据分布（第一优先级，理由见 BENCH.md §7）**：
-  - mock v3：窗口 40–120 元素（现在中位 14）、goal **不引用元素名**、中英同义词对
-    （乘以/×/Multiply by、等于/Equals）——把训练分布搬到真实尺度与语义上；
-  - 真实轨迹 up-weight（TRAINING §5 的 SFT-B：真实占比 ≥70%），并继续攒真实数据；
-  - 学出来的两阶段决策：小打分器把 80+ 元素缩到 ~20 候选再交给主模型
-    （**字符串短名单已证伪**：真实域 recall@10=0%，见 §7）。
+- **A 补数据分布（第一优先级，理由见 BENCH.md §7）**：生成器已写好（`scripts/mock_v3.py`，
+  元素中位 87 对齐真实 84 / goal 语义化不照抄控件名 / 中英混排命名），
+  **跑法（owner 离开电脑时，一条命令）**：
+  ```
+  ./.venv/Scripts/python.exe scripts/run_pipeline.py --i-am-away            # 3000 回合 + 3 epoch
+  ./.venv/Scripts/python.exe scripts/run_pipeline.py --i-am-away --episodes 200 --epochs 1  # 小规模验管线
+  ```
+  自动串起：v3 量产（断点续跑）→ 训练（输出到 `checkpoints/v3`，**不覆盖 v0**）→ 校准 →
+  真实域复测 → mock 基准 → 写对照表 `assets/bench/pipeline_<ts>.md`。
+  验收看**真实域** joint_acc / 升级率有没有动（mock 涨了不算数）。
+  再做：学出来的两阶段决策（小打分器把 80+ 元素缩到 ~20 候选；
+  **字符串短名单已证伪**：真实域 recall@10=0%，见 BENCH.md §7）。
 - **B 真 GUI 端到端**：**只能在 owner 离开电脑时跑**。`scripts/bench_gui.py` 已备好
   （mock 窗口 + 零鼠标执行器 + 真 VisualLoop；`--driver oracle|jev|vlm`；默认拒跑，需 `--allow-gui`；
   `--offscreen` 自检已过）。首次真窗口运行建议人在旁边。
@@ -77,9 +84,12 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 - GPU：RTX 5070 Ti Laptop（16GB）。**两个 torch 进程同时跑会互相拖慢**（实测 Jev 时延翻倍），
   基准测量必须串行；`scripts/eval_offline.py` 与 `bench_jev.py` 别并发
 - mock 量产**绝不能在 owner 用电脑时跑**（弹层抓鼠标；窗口虽在角落但可见）
-- 本机 **PATH 里没有 git**（`git` 命令不存在）→ 提交需要 owner 指路 git.exe
+- 本机 **PATH 里没有 git**（`git` 命令不存在）→ 用 `C:\Program Files\Git\cmd\git.exe`
+- **别用 PowerShell 的 `Get-Content | Set-Content` 改 UTF-8 源码**：PS5.1 按 ANSI(GBK) 读，
+  中文会变乱码且部分字节不可逆（本次毁过一次测试文件，只能整份重写）。改文件一律用编辑工具，
+  或 python 显式 `encoding="utf-8"` 读写。
 - PowerShell 传多行脚本给 `python -c` 会丢引号：写成临时 .py 文件再跑
-- 所有后台任务已停，无残留 MockUI 窗口
+- 两个 torch 进程同时跑会互相拖慢（基准测量必须串行）
 
 ## 未 commit / git 备忘
 
