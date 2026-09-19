@@ -167,19 +167,44 @@ class ScreenUse:
         finally:
             comtypes.CoUninitialize()
 
-    def list_ui_elements_raw(self, budget_ms: int | None = None) -> list[UIElement]:
-        """枚举可交互元素（可选时间预算）。
+    def list_ui_elements_raw(self, budget_ms: int | None = None,
+                             force_full: bool = False) -> list[UIElement]:
+        """枚举可交互元素（可选时间预算 + 后台窗口缓存）。
 
         预算把元素表清空时兜底不限时重来一次——宁可慢，不可瞎。
+        force_full=True 时忽略缓存、全部窗口重走（UI 大变动后要新鲜数据）。
         """
         if budget_ms is None:
             budget_ms = int(getattr(self.settings, "uia_budget_ms", 0) or 0)
-        result = uia_tree.list_ui_elements(budget_ms=budget_ms)
+        ttl = float(getattr(self.settings, "uia_window_cache_ttl_s", 0.0) or 0.0)
+        result = uia_tree.list_ui_elements(budget_ms=budget_ms, force_full=force_full,
+                                            cache_ttl_s=ttl)
         if not result and budget_ms:
-            result = uia_tree.list_ui_elements(budget_ms=0)
+            result = uia_tree.list_ui_elements(budget_ms=0, force_full=force_full,
+                                               cache_ttl_s=ttl)
         self._foreground_title = getattr(result, "foreground_title", "")
         self._elements = list(result)
         return self._elements
+
+    def _fresh_element(self, el: UIElement) -> UIElement:
+        """点/写之前确认控件还在原地；移位或失效 → 刷新元素表并重新解析同一个控件。
+
+        后台窗口元素表走缓存（省掉秒级遍历），代价是可能过期——这是那条路径的安全阀：
+        宁可多花一次全量枚举，也不能点到别的地方。
+        """
+        if uia_tree.element_still_valid(el):
+            return el
+        uia_tree.invalidate_window_cache()
+        fresh = self.list_ui_elements_raw(force_full=True)
+        same = [e for e in fresh
+                if e.name == el.name and e.control_type == el.control_type]
+        if not same:
+            raise ValueError(
+                f"元素 #{el.id} [{el.control_type}] {el.name!r} 已不在界面上"
+                "（缓存过期后刷新也没找到），请重新 list_ui_elements"
+            )
+        ox, oy = el.center
+        return min(same, key=lambda e: (e.center[0] - ox) ** 2 + (e.center[1] - oy) ** 2)
 
     def cached_elements(self) -> list[UIElement]:
         """最近一次枚举的元素（带 UIA 控件对象），供 screenshot(elements=...) 复用。"""
@@ -207,9 +232,14 @@ class ScreenUse:
         return self.executor.right_click(x, y).__dict__
 
     def click_element_id(self, element_id: int) -> dict:
-        """点击 list_ui_elements 返回的元素 id（使用最近一次枚举的缓存）。"""
+        """点击 list_ui_elements 返回的元素 id（使用最近一次枚举的缓存）。
+
+        点击前做一次实时 bbox 校验（背景窗口元素表可能来自缓存）：
+        控件移位/失效 → 自动刷新重解析，仍找不到则报错，绝不点到别处。
+        """
         for el in self._elements:
             if el.id == element_id:
+                el = self._fresh_element(el)
                 x, y = el.center
                 self._confirm(f"点击元素 #{element_id} [{el.control_type}] {el.name!r} @({x},{y})")
                 self._activate_window(el)
@@ -228,7 +258,7 @@ class ScreenUse:
 
     def get_element_text(self, element_id: int) -> dict:
         """读控件文本（优先 UIA ValuePattern，退回控件名称）。"""
-        el = self._find_cached(element_id)
+        el = self._fresh_element(self._find_cached(element_id))
         try:
             text = uia_tree.get_element_text(el)
         except Exception as e:
@@ -236,8 +266,11 @@ class ScreenUse:
         return {"ok": True, "text": text}
 
     def set_element_text(self, element_id: int, text: str) -> dict:
-        """写控件文本：走 UIA ValuePattern.SetValue，绕过禁粘贴的输入框。"""
-        el = self._find_cached(element_id)
+        """写控件文本：走 UIA ValuePattern.SetValue，绕过禁粘贴的输入框。
+
+        与 click_element_id 同样先做 bbox 校验：缓存过期的输入框可能已不是同一个。
+        """
+        el = self._fresh_element(self._find_cached(element_id))
         self._confirm(f"设置元素 #{element_id} [{el.control_type}] {el.name!r} 的文本: {text[:50]!r}")
         self._activate_window(el)
         try:

@@ -72,6 +72,23 @@ def measure_budgets(samples: int, budgets: list[int]) -> list[dict]:
     return rows
 
 
+def measure_cache(samples: int) -> dict:
+    """后台窗口缓存的收益：冷启（每次全走）vs 热（第二次起复用后台窗口）。"""
+    cold, warm, reused = [], [], []
+    for _ in range(samples):
+        uia_tree.invalidate_window_cache()
+        el = uia_tree.list_ui_elements(budget_ms=0)
+        cold.append(el.timings["total_ms"])
+    uia_tree.list_ui_elements(budget_ms=0)  # 预热一次
+    for _ in range(samples):
+        el = uia_tree.list_ui_elements(budget_ms=0)
+        warm.append(el.timings["total_ms"])
+        reused.append(len(el.timings.get("reused", [])))
+    return {"cold_ms": round(statistics.median(cold), 1),
+            "warm_ms": round(statistics.median(warm), 1),
+            "reused_windows": round(statistics.median(reused)) if reused else 0}
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser()
@@ -137,8 +154,17 @@ def main() -> None:
         print("注：桌面在变（窗口开关/内容刷新），同一档的元素数本身有 ±20% 波动——")
         print("    这张表看**量级**：预算把观测从秒级压到百毫秒级，代价是后台窗口的完整度。")
     print()
-    print(f"当前配置 uia_budget_ms={tools.settings.uia_budget_ms}"
-          f"（.env：SCREEN_USE_UIA_BUDGET_MS；0=不限）")
+    print(f"当前配置 uia_budget_ms={tools.settings.uia_budget_ms} / "
+          f"缓存 TTL={tools.settings.uia_window_cache_ttl_s}s"
+          f"（.env：SCREEN_USE_UIA_BUDGET_MS / SCREEN_USE_UIA_WINDOW_CACHE_TTL_S）")
+
+    cache = measure_cache(args.samples)
+    speedup = cache["cold_ms"] / cache["warm_ms"] if cache["warm_ms"] else 0.0
+    print()
+    print("后台窗口缓存收益（前台窗口永远重走，后台窗口命中期内复用）")
+    print(f"  冷启（每次全走）  {cache['cold_ms']:7.1f} ms")
+    print(f"  热（命中缓存）    {cache['warm_ms']:7.1f} ms"
+          f"   复用 {cache['reused_windows']} 个后台窗口  → {speedup:.1f}×")
 
 
 if __name__ == "__main__":

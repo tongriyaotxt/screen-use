@@ -128,6 +128,81 @@ def test_click_element_id_invalid():
         tools.click_element_id(999)
 
 
+# ---- 缓存过期安全阀：点击前 bbox 校验 + 刷新重解析（2026-09-19） ----
+
+class _CtlWithRect:
+    """只有 BoundingRectangle 的假控件（喂给 element_still_valid）。"""
+
+    def __init__(self, rect):
+        self._rect = _FakeRect(*rect)
+
+    @property
+    def BoundingRectangle(self):
+        return self._rect
+
+
+def test_click_element_id_refreshes_stale_element(monkeypatch):
+    """缓存里那个元素已经移位 → 先刷新再点新坐标，绝不点旧位置。"""
+    tools = _make_tools()
+    tools._elements = [UIElement(id=1, name="确定", control_type="ButtonControl",
+                                 bbox=(10, 10, 60, 40),
+                                 control=_CtlWithRect((310, 210, 360, 240)))]
+    fresh = [UIElement(id=7, name="确定", control_type="ButtonControl",
+                       bbox=(310, 210, 360, 240))]
+    calls = []
+
+    def fake_refresh(self, budget_ms=None, force_full=False):
+        calls.append(force_full)
+        self._elements = fresh
+        return fresh
+
+    monkeypatch.setattr(ScreenUse, "list_ui_elements_raw", fake_refresh)
+    result = tools.click_element_id(1)
+    assert calls == [True]                       # 走了强制刷新（不吃缓存）
+    assert result["element"]["id"] == 7          # 点的是刷新后的元素
+    assert result["element"]["center"] == [335, 225]
+
+
+def test_click_element_id_raises_when_element_vanished(monkeypatch):
+    """刷新后也找不到该元素 → 明确报错（交给上层重新观察），不猜着点。"""
+    tools = _make_tools()
+    tools._elements = [UIElement(id=1, name="已消失的按钮", control_type="ButtonControl",
+                                 bbox=(10, 10, 60, 40),
+                                 control=_CtlWithRect((310, 210, 360, 240)))]
+    monkeypatch.setattr(ScreenUse, "list_ui_elements_raw",
+                        lambda self, budget_ms=None, force_full=False: list(FAKE_ELEMENTS))
+    with pytest.raises(ValueError, match="已不在界面上"):
+        tools.click_element_id(1)
+
+
+def test_click_element_id_skips_refresh_when_in_place():
+    """元素还在原地 → 不刷新（省一次全量枚举）。"""
+    tools = _make_tools()
+    tools._elements = [UIElement(id=1, name="确定", control_type="ButtonControl",
+                                 bbox=(10, 10, 60, 40),
+                                 control=_CtlWithRect((10, 10, 60, 40)))]
+    with patch.object(ScreenUse, "list_ui_elements_raw",
+                      side_effect=AssertionError("不该刷新")):
+        result = tools.click_element_id(1)
+    assert result["ok"] is True
+
+
+def test_list_ui_elements_passes_cache_ttl(monkeypatch):
+    """配置里的缓存 TTL 透传给枚举（0=关缓存，必须真的传到）。"""
+    seen = []
+
+    def fake_list(**kwargs):
+        seen.append(kwargs)
+        return FAKE_ELEMENTS
+
+    monkeypatch.setattr("screen_use.tools.uia_tree.list_ui_elements", fake_list)
+    tools = _make_tools(settings=Settings(vision_provider="openai",
+                                          uia_window_cache_ttl_s=1.5))
+    tools.list_ui_elements()
+    assert seen[0]["cache_ttl_s"] == 1.5
+    assert seen[0]["force_full"] is False
+
+
 # ---- read_screen 降级 ----
 
 def test_read_screen_requires_vlm():
@@ -265,17 +340,36 @@ class _FakeVP:
 
 
 class _FakeEdit:
-    def __init__(self, value=""):
+    def __init__(self, value="", bbox=(0, 0, 100, 30)):
         self._vp = _FakeVP(value)
+        self._rect = _FakeRect(*bbox)
 
     def GetValuePattern(self):
         return self._vp
 
+    def get_BoundingRectangle(self):
+        return self._rect
 
-def _tools_with_edit(value=""):
+    @property
+    def BoundingRectangle(self):
+        return self._rect
+
+
+class _FakeRect:
+    def __init__(self, left, top, right, bottom):
+        self.left, self.top, self.right, self.bottom = left, top, right, bottom
+
+    def width(self):
+        return self.right - self.left
+
+    def height(self):
+        return self.bottom - self.top
+
+
+def _tools_with_edit(value="", bbox=(0, 0, 100, 30), control=None):
     tools = _make_tools()
     edit = UIElement(id=9, name="输入框", control_type="EditControl",
-                     bbox=(0, 0, 100, 30), control=_FakeEdit(value))
+                     bbox=bbox, control=control if control is not None else _FakeEdit(value, bbox))
     tools._elements = [edit]
     return tools
 

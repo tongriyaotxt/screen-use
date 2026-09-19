@@ -45,6 +45,48 @@ DEFAULT_BUDGET_MS = 400
 # 预算用尽时丢的是贵的（通常是无关的后台应用），不是便宜的目标窗口。
 _WINDOW_COST: dict[str, float] = {}
 
+# ---- 后台窗口元素表缓存（2026-09-19）----
+# 前台窗口每步都要重新走（它是 agent 的工作面，且最便宜 ~50ms）；
+# 后台窗口内容通常几分钟不变，却可能是慢 provider（实测两个后台窗口吃 86% 时间）。
+# 命中条件：句柄 + 标题 + 窗口矩形都一致，且未过期。点之前另有实时 bbox 校验
+# （element_still_valid）兜底，所以缓存不会导致点到别处。
+WINDOW_CACHE_TTL_S = 2.0
+_WINDOW_CACHE: dict[int, dict] = {}   # handle → {title, bbox, elements, ts}
+
+
+def invalidate_window_cache(handles: list[int] | None = None) -> None:
+    """清掉窗口缓存（None = 全清）。UI 变动、校验失败、或调用方要求新鲜时必须调。"""
+    if handles is None:
+        _WINDOW_CACHE.clear()
+        return
+    for h in handles:
+        _WINDOW_CACHE.pop(h, None)
+
+
+def cache_stats() -> dict:
+    """缓存现状（诊断用）。"""
+    return {"entries": len(_WINDOW_CACHE),
+            "handles": sorted(_WINDOW_CACHE)}
+
+
+def element_still_valid(el: UIElement, tol: int = 4) -> bool:
+    """控件是否还在原地（读实时 bbox）。
+
+    缓存复用 / 点击前的安全检查：UIA 元素引用在 UI 变动后可能失效（抛异常）
+    或指向别处（矩形变了）。没有 control 对象（离线合成/测试）时不阻断。
+    """
+    ctrl = el.control
+    if ctrl is None:
+        return True
+    try:
+        rect = ctrl.BoundingRectangle
+        if rect.width() <= 0 or rect.height() <= 0:
+            return False
+        current = (rect.left, rect.top, rect.right, rect.bottom)
+    except Exception:
+        return False
+    return all(abs(a - b) <= tol for a, b in zip(current, el.bbox))
+
 
 @dataclass
 class UIElement:
@@ -204,7 +246,9 @@ def _screen_size() -> tuple[int, int]:
 def list_ui_elements(max_elements: int = MAX_ELEMENTS,
                      max_windows: int = MAX_WINDOWS,
                      max_visited: int = MAX_VISITED,
-                     budget_ms: int | None = None) -> list[UIElement]:
+                     budget_ms: int | None = None,
+                     force_full: bool = False,
+                     cache_ttl_s: float | None = None) -> list[UIElement]:
     """枚举所有可见顶层窗口的可交互控件（前台窗口优先）。
 
     多窗口任务时 agent 需要能看到非前台窗口的元素（点击即激活该窗口），
@@ -214,6 +258,8 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
 
     budget_ms: 枚举**总**时间预算（0/None 用 DEFAULT_BUDGET_MS）。前台窗口永不限时，
     其余窗口按学到的成本从便宜到贵走，超预算即停（已收集的元素保留，元素表可能变短）。
+    force_full: 忽略缓存，全部窗口重走（UI 大变动后要求新鲜数据时用）。
+    cache_ttl_s: 后台窗口元素表缓存有效期（秒，0=禁用；None 用 WINDOW_CACHE_TTL_S）。
     实测拆分见 `el.timings`。并行遍历试过（2026-09-19）：本机无收益（UIA 跨进程调用
     在 broker 侧仍然串行），已回退。
     """
@@ -225,6 +271,8 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
 
     if budget_ms is None:
         budget_ms = DEFAULT_BUDGET_MS
+    if cache_ttl_s is None:
+        cache_ttl_s = WINDOW_CACHE_TTL_S
     deadline = (time.perf_counter() + budget_ms / 1000) if budget_ms else None
 
     t_start = time.perf_counter()
@@ -239,9 +287,10 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
     except Exception:
         fg_handle = 0
 
-    # 收集可见顶层窗口，前台排最前
+    # 收集可见顶层窗口，前台排最前（顺便记下矩形：既做缓存键，也避免重复 COM 读取）
     root = auto.GetRootControl()
     windows = []
+    rects: dict[int, tuple[int, int, int, int]] = {}
     for w in root.GetChildren():
         try:
             if w.ControlTypeName != "WindowControl" or w.IsOffscreen:
@@ -250,6 +299,7 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
             if rect.width() <= 0 or rect.height() <= 0:
                 continue
             windows.append(w)
+            rects[_safe_handle(w)] = (rect.left, rect.top, rect.right, rect.bottom)
         except Exception:
             continue
     windows.sort(key=lambda w: 0 if _safe_handle(w) == fg_handle else 1)
@@ -260,12 +310,13 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
     background = [w for w in windows[:max_windows] if _safe_handle(w) != fg_handle]
     background.sort(key=lambda w: _window_cost(w))
 
-    # 逐窗口收集（共享节点预算 + 总时间预算；前台窗口不吃截止时间）
+    # 逐窗口收集（共享节点预算 + 总时间预算；前台窗口不吃截止时间、也不吃缓存）
     visited = [0]
     per_window: list[list[UIElement]] = []
     foreground_title = ""
     per_window_stats: list[dict] = []
     skipped: list[str] = []
+    reused: list[str] = []
     for w in foreground + background:
         try:
             title = (w.Name or "").strip() or "(无标题)"
@@ -275,6 +326,22 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
         is_fg = handle == fg_handle
         if is_fg:
             foreground_title = title
+
+        # 后台窗口缓存命中（句柄+标题+矩形一致且未过期）→ 直接复用，跳过整棵遍历
+        if not is_fg and not force_full and cache_ttl_s:
+            entry = _WINDOW_CACHE.get(handle)
+            if (entry is not None and entry["title"] == title
+                    and entry["bbox"] == rects.get(handle)
+                    and time.perf_counter() - entry["ts"] <= cache_ttl_s):
+                per_window.append(entry["elements"])
+                reused.append(title[:40])
+                per_window_stats.append({
+                    "title": title[:40], "nodes": 0,
+                    "elements": len(entry["elements"]), "ms": 0.0,
+                    "foreground": False, "cut": False, "cached": True,
+                })
+                continue
+
         if not is_fg and deadline is not None and time.perf_counter() > deadline:
             skipped.append(title[:40])  # 预算用尽：跳过（timings 里如实记账）
             continue
@@ -284,6 +351,8 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
                             deadline=None if is_fg else deadline)
         spent = (time.perf_counter() - t_w) * 1000
         _remember_cost(title, spent)
+        _WINDOW_CACHE[handle] = {"title": title, "bbox": rects.get(handle),
+                                 "elements": els, "ts": time.perf_counter()}
         per_window_stats.append({
             "title": title[:40], "nodes": visited[0] - nodes_before,
             "elements": len(els), "ms": round(spent, 1),
@@ -291,6 +360,9 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
             "cut": bool(not is_fg and deadline is not None and time.perf_counter() > deadline),
         })
         per_window.append(els)
+
+    # 清掉已经不在桌面上的窗口缓存，防句柄复用导致的张冠李戴
+    invalidate_window_cache([h for h in list(_WINDOW_CACHE) if h not in rects])
 
     # 配额分配：前台窗口保底一半，其余窗口均分另一半。
     # 每窗口内先去重再按面积升序截取：重复项不吃配额，小控件（按钮）优先于大容器——
@@ -319,6 +391,8 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
         "n_windows": len(per_window),
         "budget_ms": budget_ms,
         "skipped": skipped,
+        "reused": reused,
+        "cache_entries": len(_WINDOW_CACHE),
         "windows": per_window_stats,
     }
     return ElementList(unique, foreground_title=foreground_title, timings=timings)

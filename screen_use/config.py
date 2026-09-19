@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     # 逐档实测见 scripts/measure_observe.py。
     uia_budget_ms: int = 0
 
+    # 后台窗口元素表缓存有效期（秒，0 = 关闭缓存）。
+    # 前台窗口每步都重走（便宜且是工作面），后台窗口内容通常几分钟不变，
+    # 却可能是慢 provider（实测两个后台窗口吃掉 86% 枚举时间）。
+    # 命中条件：句柄+标题+窗口矩形一致且未过期；点/写之前另有实时 bbox 校验兜底。
+    uia_window_cache_ttl_s: float = 2.0
+
     @property
     def vlm_available(self) -> bool:
         """VLM 是否可用：本地 Ollama 不需要 API key，云端需要。"""
