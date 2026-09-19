@@ -1,6 +1,7 @@
 # PROGRESS — screen-use / desktop-jev
 
-> 最后更新：2026-09-19 10:50（阶段 4 接入 + 北极星首测完成）。下次会话：先读本文，向 owner 汇报进展并继续。
+> 最后更新：2026-09-19 13:45（v3 流水线已挂后台跑，等 owner 离开电脑自动推进）。
+> 下次会话：先读本文 + `assets/bench/logs/pipeline_*.log`，向 owner 汇报并继续。
 
 ## 一句话状态
 
@@ -16,6 +17,9 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
+| 09-19 | **v3 流水线开跑**（1000 回合 / 2 epoch，idle-gate 60s，你离开电脑才动） | `scripts/run_pipeline.py`、`assets/bench/logs/pipeline_20260919-1340.log` |
+| 09-19 | **修流水线评测域**：第 5 步 mock 基准漏传 `--data` → 会拿 v2（14 元素）考 v3（90 元素）模型，低分会被误读成"训练搞坏了" | `scripts/run_pipeline.py` |
+| 09-19 | **修校准小样本崩溃**：哈希分半可能把留出文件全分到一侧 → `torch.cat([])` 报错看不懂；现按文件整体挪一个 + 明确错误信息 | `training/calibrate.py`、`tests/test_calibrate.py`（+6 测试） |
 | 09-19 | **图标无文字分布对齐**：真实 11% 元素无名 → v3 掺无名图标按钮 + 无重名保护 | `scripts/mock_v3.py`、`tests/test_mock_v3.py`、BENCH.md §8.7/8.8 |
 | 09-19 | **人类基线工具**（8 个可验证日常任务，人/agent 同口径对照） | `scripts/baseline.py`、`tests/test_baseline.py` |
 | 09-19 | **mock v3 生成器 + 一条命令流水线**（尺度/语义/双语对齐真实分布） | `scripts/mock_v3.py`、`scripts/run_pipeline.py`、`tests/test_mock_v3.py` |
@@ -31,7 +35,7 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 | 09-18 | 研究文档：desktop-jev 五件 + cascade-protocol | `research/desktop-jev/`、`research/cascade-protocol/` |
 | 09-18 | 线上问题修复×4：焦点抢占/窗口激活验证/fail-safe复位/UIA配额 | `agent.py`、`tools.py`、`executor.py`、`uia_tree.py` |
 
-测试：**155 passed**（`./.venv/Scripts/python.exe -m pytest tests/ -q`，118 → 155，新增 Jev 快路径/升级/认输/异常降级/词表同源等护栏）
+测试：**230 passed**（`./.venv/Scripts/python.exe -m pytest tests/ -q`，118 → 155 → 230，新增 Jev 快路径/升级/认输/异常降级/词表同源/校准分半等护栏）
 
 ## 关键指标（09-19 首测，mock；原始数据 `assets/bench/`）
 
@@ -62,6 +66,8 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 - **A 补数据分布（第一优先级，理由见 BENCH.md §7）**：生成器已写好（`scripts/mock_v3.py`，
   元素中位 87 对齐真实 84 / goal 语义化不照抄控件名 / 中英混排命名），
+  **状态：2026-09-19 13:40 已挂后台跑**（`--episodes 1000 --epochs 2 --idle-gate-s 60
+  --throttle-ms 50`，owner 开着电脑就静默停着、不弹窗；日志 `assets/bench/logs/pipeline_20260919-1340.log`）。
   **跑法（owner 离开电脑时，一条命令）**：
   ```
   ./.venv/Scripts/python.exe scripts/run_pipeline.py --i-am-away            # 3000 回合 + 3 epoch

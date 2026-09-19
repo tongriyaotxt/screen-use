@@ -230,9 +230,13 @@ def _pipeline(args, log, report: list, stamp: str, v3_dir: Path) -> None:
              dry=args.dry_run)
 
     # ---- 5. mock 域基准（确认没把训练域搞坏 + 拿时延） ----
+    # `--data` 必须显式指向本次训练域（v3）：bench_jev 的默认值是 v2 目录，
+    # 而 v2 只有 14 个元素/步、v3 是 90 —— 拿 v2 考 v3 模型等于考分布外数据，
+    # 跑出来的低分会被误读成"训练把模型搞坏了"（2026-09-19 修正）。
     mock_out = ROOT / "assets" / "bench" / f"v3_mock_{stamp}.json"
     run_step("mock 基准（Jev 单边，省 API）",
              [PY, str(ROOT / "scripts" / "bench_jev.py"), "--ckpt", str(ckpt),
+              "--data", str(v3_dir),
               "--episodes", str(args.eval_episodes), "--skip-vlm",
               "--out", str(mock_out.parent)], log, dry=args.dry_run)
 
@@ -246,6 +250,9 @@ def _pipeline(args, log, report: list, stamp: str, v3_dir: Path) -> None:
     real = load(real_out).get("deployed") or {}
     v0_real = load(ROOT / "assets" / "bench"
                    / "offline_eval_realdomain.json").get("deployed") or {}
+    report.append(("真实域口径",
+                   "traces_full 同时在训练集里（v0 那轮也一样）→ 绝对值偏乐观，"
+                   "但两轮同口径、mock 分布是唯一变量，前后差可用"))
     for label, key in (("op_acc", "op_acc"), ("joint_acc", "joint_acc"),
                        ("升级率", "escalation_rate"), ("覆盖率", "coverage")):
         report.append((f"真实域 {label}（v0 → v3）",

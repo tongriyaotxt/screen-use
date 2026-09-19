@@ -205,15 +205,28 @@ def split_calib_select(samples: list[dict]) -> tuple[list[dict], list[dict]]:
 
     按文件（episode）切分而非按步切分——同 episode 的连续步高度相关，
     随机切会把同一状态泄漏到两侧，让 ECE/覆盖率虚高。
+    小样本兜底：哈希分半可能把**所有文件**分到同一侧（实测 2 个文件时就会发生），
+    此时按文件整体挪一个过去——仍保证「同 episode 不跨侧」，只是两侧都有数据。
     """
     calib, select = [], []
     for s in samples:
         digest = hashlib.sha1(s.get("file", "").encode("utf-8")).digest()[0]
         (calib if digest % 2 == 0 else select).append(s)
+    if not calib or not select:
+        src, dst = (calib, select) if not select else (select, calib)
+        files = sorted({s.get("file", "") for s in src})
+        if len(files) >= 2:
+            move = {files[0]}
+            dst.extend(s for s in src if s.get("file", "") in move)
+            src[:] = [s for s in src if s.get("file", "") not in move]
     return calib, select
 
 
 def _collect(model, samples: list[dict], tok, device) -> dict:
+    if not samples:
+        raise SystemExit(
+            "校准集为空：留出样本太少（分半后有一侧没有数据）。\n"
+            "校准至少需要 2 个轨迹文件的留出样本；数据量不够时请先多量产几回合。")
     dl = DataLoader(JevDataset(samples, tok), batch_size=16,
                     collate_fn=lambda b: collate(b, tok.pad_token_id))
     op_logits, op_labels, elem_logits, elem_labels, confs = collect_logits(model, dl, device)
