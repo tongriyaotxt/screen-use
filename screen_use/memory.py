@@ -158,8 +158,12 @@ class TraceRecorder:
 
     def record_step(self, step_idx: int, foreground_title: str,
                     elements: list[dict], action: str, args: dict,
-                    ok: bool, detail: str = "") -> None:
-        """落盘一步观测+决策。须在 start_task 之后调用。"""
+                    ok: bool, detail: str = "", source: str = "vlm_trace") -> None:
+        """落盘一步观测+决策。须在 start_task 之后调用。
+
+        source 标注这一步的决策来源（vlm_trace = 大模型驾驶 / jev = 小模型快路径），
+        训练侧据此分层报告指标（TRAINING §1：合成准确率再高也不算数）。
+        """
         if self._path is None:
             raise RuntimeError("record_step 前请先 start_task")
         entry = {
@@ -171,6 +175,7 @@ class TraceRecorder:
             "args": args,
             "ok": ok,
             "detail": detail,
+            "source": source,
             "ts": time.time(),
         }
         with open(self._path, "a", encoding="utf-8") as f:

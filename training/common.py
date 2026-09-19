@@ -10,8 +10,9 @@ import re
 from pathlib import Path
 
 # ---- 动作词表（TRAINING §5.1，8 类） ----
-OPS = ["CLICK", "DOUBLE_CLICK", "RIGHT_CLICK", "SCROLL", "WAIT", "DONE", "BLOCKED", "TYPE"]
-OP2IDX = {op: i for i, op in enumerate(OPS)}
+# 单一真源在 screen_use/jev_bridge.py（运行时包不背 torch，训练侧反向复用同一份词表，
+# 保证 train/serve 不漂移）；history 文本格式也由 jev_bridge.history_entry 对齐。
+from screen_use.jev_bridge import OP2IDX, OPS, history_entry  # noqa: F401
 
 # 轨迹动作 → Jev 动作；hotkey/press/think_error 不在动作集内（永升级，不进训练集）
 _ACTION_MAP = {
@@ -119,9 +120,8 @@ def _element_id_from_detail(detail: str, elements: list[dict]):
 
 
 def _hist_entry(op: str, s: dict, ok: bool) -> str:
-    args = s.get("args", {})
-    brief = args.get("text") or args.get("id") or args.get("element_id") or args.get("clicks") or ""
-    return f"[{op} {brief} {'✓' if ok else '✗'}]"
+    """history 片段：复用运行时同一实现（jev_bridge.history_entry），train/serve 同构。"""
+    return history_entry(op, s.get("args", {}), ok)
 
 
 def serialize_observation(goal: str, foreground: str, elements: list[dict],

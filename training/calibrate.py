@@ -1,15 +1,24 @@
 """校准与 τ 选择（TRAINING.md §7）：temperature scaling + 等张回归 + selective 曲线。
 
+关键决定（2026-09-19 修订）：
+1. **留出集再分半**：一半拟合温度/等张映射，另一半只用来选 τ 并报 ECE——
+   否则等张回归在同一批数据上拟合+评估，会得到 ECE=0.0 这种自欺数字。
+   分半按**轨迹文件**切（同 episode 的步高度相关，按步切会泄漏）。
+2. **等张断点落盘**：`calibration.json` 存 isotonic {x, y}，serve 侧据此把原始
+   sigmoid 映射成 P(决策正确)。不落盘的话 τ 的语义在部署时就丢了
+   （旧 ckpt 的 τ=0.5 是在校准后 conf 上选的，serve 却拿原始 conf 比 → 升级率漂移）。
+
 用法：
     ./.venv/Scripts/python.exe -m training.calibrate \
         --ckpt checkpoints/jev-Qwen3-0.6B-e3 --data ~/.screen_use/traces_mock
 
-产出：{ckpt}/calibration.json {temperature, tau, coverage_at_tau, risk_at_tau}
+产出：{ckpt}/calibration.json（温度、isotonic 断点、τ、覆盖率、风险、selective 曲线）
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -73,11 +82,13 @@ def main() -> None:
     p.add_argument("--data", action="append", required=True)
     p.add_argument("--coverage-target", type=float, default=0.725,
                    help="τ 选择的覆盖率目标（TRAINING §7：70-75%）")
+    p.add_argument("--tau", type=float, default=0.0,
+                   help="钉死 τ（0=按覆盖率目标自动选）。部署侧曲线（scripts/eval_offline.py "
+                        "的 deployed.curve）比 10% 留出切片更可信，用它定下 τ 后从这里传入")
     args = p.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ckpt = Path(args.ckpt)
-    base = json.loads((ckpt / "train_args.json").read_text())["base"]
     tok = build_tokenizer(str(ckpt))  # ckpt 已含特殊 token
     model = JevModel(str(ckpt), resize_special=False).to(device)  # backbone 从 ckpt 加载
     heads = torch.load(ckpt / "heads.pt", map_location=device, weights_only=True)
@@ -86,59 +97,136 @@ def main() -> None:
 
     samples = iter_samples([Path(d).expanduser() for d in args.data])
     _, hold = split_holdout(samples)  # 与训练同 seed 的留出集
-    dl = DataLoader(JevDataset(hold, tok), batch_size=16,
-                    collate_fn=lambda b: collate(b, tok.pad_token_id))
-    op_logits, op_labels, elem_logits, elem_labels, conf = collect_logits(model, dl, device)
+    calib_s, select_s = split_calib_select(hold)
 
-    # 温度缩放（分别拟合 op / elem）
-    t_op = fit_temperature(op_logits, op_labels)
-    t_elem = fit_temperature(elem_logits, elem_labels)
-    op_pred = (op_logits / t_op).argmax(-1)
-    elem_pred = (elem_logits / t_elem).argmax(-1)
-    correct = ((op_pred == op_labels) & (elem_pred == elem_labels)).float()
+    # 温度缩放（在 calib 半集上拟合，避免用选择集调参）
+    cal = _collect(model, calib_s, tok, device)
+    t_op = fit_temperature(cal["op_logits"], cal["op_labels"])
+    t_elem = fit_temperature(cal["elem_logits"], cal["elem_labels"])
+    conf_cal, correct_cal = _calibrated_conf(cal, t_op, t_elem)
 
-    # 置信度改用校准后联合正确的经验频率：等张回归（conf → P(correct)）
+    # 等张回归 conf → P(联合正确)：只在 calib 半集拟合，断点落盘供 serve 复用
     from sklearn.isotonic import IsotonicRegression
-    iso = IsotonicRegression(out_of_bounds="clip").fit(conf.numpy(), correct.numpy())
-    conf_cal = torch.tensor(iso.predict(conf.numpy()), dtype=torch.float32)
+    iso = IsotonicRegression(out_of_bounds="clip").fit(conf_cal.numpy(), correct_cal.numpy())
+    iso_x, iso_y = _isotonic_points(iso)
 
-    ece_before = ece(conf, correct)
-    ece_after = ece(conf_cal, correct)
+    # 选择集：τ 扫描 + 诚实 ECE（与拟合数据不相交）
+    sel = _collect(model, select_s, tok, device)
+    conf_sel, correct_sel = _calibrated_conf(sel, t_op, t_elem)
+    conf_sel_iso = torch.tensor(_apply_isotonic(conf_sel.tolist(), iso_x, iso_y),
+                                dtype=torch.float32)
+
+    ece_before = ece(conf_sel, correct_sel)
+    ece_after = ece(conf_sel_iso, correct_sel)
 
     # τ 扫描：coverage = 快路径执行比例，risk = 快路径上的错误率
     curve = []
     for tau in [x / 100 for x in range(50, 99)]:
-        fast = conf_cal >= tau
+        fast = conf_sel_iso >= tau
         if fast.float().mean() < 0.3:  # 快路径太窄无意义
             continue
         curve.append({
             "tau": tau,
             "coverage": fast.float().mean().item(),
-            "risk": 1 - correct[fast].mean().item() if fast.any() else 1.0,
+            "risk": 1 - correct_sel[fast].mean().item() if fast.any() else 1.0,
             "escalation_rate": 1 - fast.float().mean().item(),
         })
-    # 选 τ：覆盖率最接近目标且风险最低；若 conf 整体偏低导致候选为空则退回中位数
-    if curve:
-        best = min(curve, key=lambda c: (abs(c["coverage"] - args.coverage_target), c["risk"]))
-    else:
-        tau = float(conf_cal.median())
-        fast = conf_cal >= tau
-        best = {"tau": round(tau, 3), "coverage": fast.float().mean().item(),
-                "risk": 1 - correct[fast].mean().item() if fast.any() else 1.0,
+    # 选 τ：显式 --tau 优先；否则覆盖率最接近目标且风险最低；
+    # 若 conf 整体偏低导致候选为空则退回中位数
+    if args.tau:
+        tau = args.tau
+        fast = conf_sel_iso >= tau
+        best = {"tau": tau, "coverage": fast.float().mean().item(),
+                "risk": 1 - correct_sel[fast].mean().item() if fast.any() else 1.0,
                 "escalation_rate": 1 - fast.float().mean().item()}
+        tau_source = "cli"
+    elif curve:
+        best = min(curve, key=lambda c: (abs(c["coverage"] - args.coverage_target), c["risk"]))
+        tau_source = "coverage_target"
+    else:
+        tau = float(conf_sel_iso.median())
+        fast = conf_sel_iso >= tau
+        best = {"tau": round(tau, 3), "coverage": fast.float().mean().item(),
+                "risk": 1 - correct_sel[fast].mean().item() if fast.any() else 1.0,
+                "escalation_rate": 1 - fast.float().mean().item()}
+        tau_source = "median_fallback"
 
+    # 部署一致性检查：serve 侧按落盘断点插值，覆盖率应与选择集一致（±0.5%）
+    sel_cov = best["coverage"]
     result = {
         "temperature_op": t_op, "temperature_elem": t_elem,
+        "isotonic": {"x": iso_x, "y": iso_y},  # serve 据此把原始 sigmoid → P(正确)
         "ece_before": round(ece_before, 4), "ece_after": round(ece_after, 4),
-        "tau": best["tau"], "coverage": round(best["coverage"], 3),
+        "tau": best["tau"], "coverage": round(sel_cov, 3),
         "risk": round(best["risk"], 3),
-        "joint_acc_holdout": round(correct.mean().item(), 3),
+        "tau_source": tau_source,
+        "joint_acc_holdout": round(correct_sel.mean().item(), 3),
+        "n_calib": len(calib_s), "n_select": len(select_s),
         "selective_curve": curve,
     }
     (ckpt / "calibration.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(json.dumps({k: v for k, v in result.items() if k != "selective_curve"},
-                     ensure_ascii=False, indent=1))
+    shown = {k: v for k, v in result.items() if k not in ("selective_curve", "isotonic")}
+    print(json.dumps(shown, ensure_ascii=False, indent=1))
+
+
+def split_calib_select(samples: list[dict]) -> tuple[list[dict], list[dict]]:
+    """按轨迹文件分半：一半拟合温度/等张，一半选 τ 并报 ECE。
+
+    按文件（episode）切分而非按步切分——同 episode 的连续步高度相关，
+    随机切会把同一状态泄漏到两侧，让 ECE/覆盖率虚高。
+    """
+    calib, select = [], []
+    for s in samples:
+        digest = hashlib.sha1(s.get("file", "").encode("utf-8")).digest()[0]
+        (calib if digest % 2 == 0 else select).append(s)
+    return calib, select
+
+
+def _collect(model, samples: list[dict], tok, device) -> dict:
+    dl = DataLoader(JevDataset(samples, tok), batch_size=16,
+                    collate_fn=lambda b: collate(b, tok.pad_token_id))
+    op_logits, op_labels, elem_logits, elem_labels, confs = collect_logits(model, dl, device)
+    return {"op_logits": op_logits, "op_labels": op_labels, "elem_logits": elem_logits,
+            "elem_labels": elem_labels, "confs": confs}
+
+
+def _calibrated_conf(data: dict, t_op: float, t_elem: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """→ (原始 sigmoid conf, 联合正确标签 correct)（顺序与调用点一致）。"""
+    op_pred = (data["op_logits"] / t_op).argmax(-1)
+    elem_pred = (data["elem_logits"] / t_elem).argmax(-1)
+    correct = ((op_pred == data["op_labels"]) & (elem_pred == data["elem_labels"])).float()
+    return data["confs"], correct
+
+
+def _isotonic_points(iso) -> tuple[list[float], list[float]]:
+    """取出等张回归的断点（sklearn 版本差异兜底）。"""
+    xs = getattr(iso, "X_thresholds_", None)
+    ys = getattr(iso, "y_thresholds_", None)
+    if xs is None or ys is None:  # 老版本 sklearn
+        xs, ys = iso.f_.x, iso.f_.y
+    return [float(v) for v in xs], [float(v) for v in ys]
+
+
+def _apply_isotonic(values: list[float], xs: list[float], ys: list[float]) -> list[float]:
+    """与 serve.JevDecision._calibrate 同一套分段线性插值（这里用 bisect 批量版）。"""
+    import bisect
+
+    out = []
+    for v in values:
+        if not xs:
+            out.append(v)
+            continue
+        if v <= xs[0]:
+            out.append(float(ys[0]))
+        elif v >= xs[-1]:
+            out.append(float(ys[-1]))
+        else:
+            i = bisect.bisect_left(xs, v)
+            x0, x1, y0, y1 = xs[i - 1], xs[i], ys[i - 1], ys[i]
+            out.append(float(y1) if x1 <= x0 else
+                       float(y0 + (y1 - y0) * (v - x0) / (x1 - x0)))
+    return out
 
 
 if __name__ == "__main__":

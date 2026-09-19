@@ -372,3 +372,191 @@ def test_loop_record_full_trace_disabled(tmp_path):
 def test_record_full_trace_default():
     """record_full_trace 默认开启（不读 .env，隔离用户本机配置）。"""
     assert Settings(_env_file=None).record_full_trace is True
+
+
+# ---- Jev 快路径（desktop-jev 阶段 4 接入，cascade protocol 中环） ----
+
+from screen_use.perception.uia_tree import ElementList  # noqa: E402
+
+
+class FakeJev:
+    """脚本化 Jev 引擎（不依赖 torch）：记录每次调用收到的观测与历史。"""
+
+    def __init__(self, decisions: list[dict], latency_ms: float = 7.0):
+        self.decisions = decisions
+        self.latency_ms = latency_ms
+        self.calls: list[dict] = []
+
+    def decide(self, goal, foreground, elements, history):
+        self.calls.append({"goal": goal, "foreground": foreground,
+                           "elements": elements, "history": list(history)})
+        d = dict(self.decisions[min(len(self.calls) - 1, len(self.decisions) - 1)])
+        d.setdefault("confidence", 0.9)
+        d.setdefault("escalate", d["confidence"] < 0.5)
+        d["latency_ms"] = self.latency_ms
+        return d
+
+
+class BoomJev:
+    """推理直接抛异常（模拟 CUDA OOM / 引擎未就绪）。"""
+
+    def decide(self, *args, **kwargs):
+        raise RuntimeError("CUDA out of memory")
+
+
+@pytest.fixture
+def mock_uia(monkeypatch):
+    """快路径观测走 UIA 元素表：给它一个带前台标题的元素表。"""
+    monkeypatch.setattr(
+        "screen_use.tools.uia_tree.list_ui_elements",
+        lambda: ElementList(FAKE_ELEMENTS, foreground_title="MockUI-1"),
+    )
+
+
+def _no_screenshot(*_args, **_kwargs):
+    raise AssertionError("Jev 快路径不应截图")
+
+
+def test_jev_fast_path_skips_vlm_and_screenshot(mock_uia):
+    """快路径：Jev 直接决策 → 零 VLM 调用、零截图，全程 ring=jev。"""
+    provider = ScriptProvider(['{"action": "done", "result": "不该被调用"}'])
+    tools = _loop_tools(provider)
+    jev = FakeJev([
+        {"action": "CLICK", "element_id": 1, "confidence": 0.91},
+        {"action": "DONE", "confidence": 0.95},
+    ])
+    with patch.object(ScreenUse, "screenshot", _no_screenshot), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=5, jev=jev).run("点一下1号按钮")
+
+    assert result.done is True
+    assert provider.calls == 0                      # 一次 VLM 都没花
+    assert [s.ring for s in result.steps] == ["jev", "jev"]
+    assert result.steps[0].action == "click_id" and result.steps[0].args["id"] == 1
+    assert result.metrics["jev_steps"] == 2
+    assert result.metrics["vlm_steps"] == 0 and result.metrics["vlm_calls"] == 0
+    assert result.metrics["screenshot_calls"] == 0  # SoM 截图+编码全省
+    assert result.metrics["ring"] == "jev"
+    assert result.metrics["jev_ms"] > 0 and result.metrics["wall_ms"] > 0
+
+
+def test_jev_observation_passed_to_engine(mock_uia):
+    """观测（前台标题 + 元素表）与 history 按训练同构格式喂给 Jev。"""
+    provider = ScriptProvider(["不该被调用"])
+    tools = _loop_tools(provider)
+    jev = FakeJev([
+        {"action": "TYPE", "element_id": 1, "text": "北京", "confidence": 0.9},
+        {"action": "DONE", "confidence": 0.9},
+    ])
+    with patch.object(ScreenUse, "screenshot", _no_screenshot), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=3, jev=jev).run("在城市输入框输入北京")
+
+    assert result.done is True
+    assert jev.calls[0]["goal"] == "在城市输入框输入北京"
+    assert jev.calls[0]["foreground"] == "MockUI-1"
+    assert jev.calls[0]["elements"][0]["id"] == 1
+    assert jev.calls[0]["history"] == []
+    assert result.steps[0].action == "type" and result.steps[0].args["text"] == "北京"
+    # 第二步拿到的 history 必须与 SFT 训练时同一格式
+    assert jev.calls[1]["history"] == ["[TYPE 北京 ✓]"]
+
+
+def test_jev_low_confidence_escalates_to_vlm_with_hint(mock_uia):
+    """低置信 → 走原 VLM 路径，并把 Jev 的判断作为提示带过去（带地图退）。"""
+    provider = RecordingProvider(['{"action": "done", "result": "慢路径完成"}'])
+    tools = _loop_tools(provider)
+    jev = FakeJev([{"action": "CLICK", "element_id": 1, "confidence": 0.2}])
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=3, jev=jev).run("点一下1号按钮")
+
+    assert result.done is True and result.result == "慢路径完成"
+    assert provider.calls == 1
+    assert result.metrics["jev_escalations"] == 1
+    assert result.metrics["vlm_steps"] == 1 and result.metrics["vlm_calls"] == 1
+    assert result.metrics["screenshot_calls"] == 1   # 升级才补 SoM 截图
+    # 本步最终由 VLM 决策完成，所以整体 ring=vlm；但升级计数如实记着
+    assert result.metrics["ring"] == "vlm"
+    assert result.steps[0].ring == "vlm"
+    assert "快路径提示" in provider.questions[0]
+    assert "CLICK" in provider.questions[0] and "#1" in provider.questions[0]
+
+
+def test_jev_hybrid_ring_when_both_rings_act(mock_uia):
+    """两环都真的执行过动作 → ring=hybrid（北极星指标要能区分三种驾驶模式）。"""
+    provider = RecordingProvider(['{"action": "done", "result": "慢路径收尾"}'])
+    tools = _loop_tools(provider)
+    jev = FakeJev([
+        {"action": "CLICK", "element_id": 1, "confidence": 0.9},
+        {"action": "CLICK", "element_id": 1, "confidence": 0.1},
+    ])
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=5, jev=jev).run("点一下1号按钮")
+
+    assert result.done is True
+    assert [s.ring for s in result.steps] == ["jev", "vlm"]
+    assert result.metrics["ring"] == "hybrid"
+    assert result.metrics["jev_steps"] == 1 and result.metrics["vlm_steps"] == 1
+    assert result.metrics["jev_escalations"] == 1
+
+
+def test_jev_blocked_escalates_without_burning_vlm(mock_uia):
+    """Jev 认输（BLOCKED）→ 不烧 VLM，直接带观测快照升级（§4 blocked_action）。"""
+    provider = ScriptProvider(["不该被调用"])
+    tools = _loop_tools(provider)
+    jev = FakeJev([{"action": "BLOCKED", "confidence": 0.99}])
+    with patch.object(ScreenUse, "screenshot", _no_screenshot), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=3, jev=jev).run("点击不存在的按钮")
+
+    assert result.done is False
+    assert result.escalated is True
+    assert result.escalation_reason == "blocked_action"
+    assert provider.calls == 0
+    assert result.steps[-1].action == "blocked" and result.steps[-1].ring == "jev"
+    assert result.metrics["ring"] == "jev"
+
+
+def test_jev_error_degrades_to_vlm(mock_uia):
+    """引擎异常只降级不中断：记 jev_errors，本步回落 VLM。"""
+    provider = ScriptProvider(['{"action": "done", "result": "ok"}'])
+    tools = _loop_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=2, jev=BoomJev()).run("任务")
+
+    assert result.done is True
+    assert result.metrics["jev_errors"] == 1
+    assert result.metrics["vlm_steps"] == 1 and result.metrics["jev_steps"] == 0
+    assert result.metrics["ring"] == "vlm"
+
+
+def test_run_task_with_jev_reports_engine_and_metrics(mock_uia):
+    """run_task 的交接包要带 engine 与 metrics（宿主据此判断该不该再试快路径）。"""
+    provider = ScriptProvider(["不该被调用"])
+    tools = _loop_tools(provider)
+    tools.jev = FakeJev([{"action": "BLOCKED", "confidence": 0.9}])
+    with patch.object(ScreenUse, "screenshot", _no_screenshot), \
+         patch("screen_use.agent.time.sleep"):
+        out = tools.run_task("点击不存在的按钮", max_steps=3)
+
+    assert out["status"] == "escalated"
+    assert out["from_ring"] == "jev" and out["engine"] == "jev"
+    assert out["reason"]["class"] == "blocked_action"
+    assert out["metrics"]["jev_steps"] == 1
+    assert out["observation"]["foreground_title"] == "MockUI-1"
+    assert out["progress"]["remaining_goal"] == "点击不存在的按钮"
+
+
+def test_pure_vlm_metrics_ring(mock_uia):
+    """未接 Jev 时指标应如实标注 ring=vlm，且每步一次截图（对照组基线）。"""
+    provider = ScriptProvider(['{"action": "done", "result": "ok"}'])
+    tools = _loop_tools(provider)
+    with patch.object(ScreenUse, "screenshot", return_value=FAKE_SHOT), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=2).run("任务")
+    assert result.metrics["ring"] == "vlm"
+    assert result.metrics["vlm_steps"] == 1 and result.metrics["screenshot_calls"] == 1
+    assert result.metrics["jev_steps"] == 0

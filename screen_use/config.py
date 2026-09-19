@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     # desktop-jev 阶段 0：结构化逐步轨迹采集（元素表+决策逐步落盘到 traces_full/，SFT 原料）
     record_full_trace: bool = True
 
+    # desktop-jev 阶段 4：Jev 快路径 checkpoint（留空 = 纯 VLM 循环，接入前行为）。
+    # 例：JEV_CHECKPOINT=checkpoints/jev-Qwen3-0.6B-e3
+    # 加载失败自动降级为纯 VLM（screen_use/jev_bridge.load_engine 只警告不抛）。
+    jev_checkpoint: str = ""
+
     @property
     def vlm_available(self) -> bool:
         """VLM 是否可用：本地 Ollama 不需要 API key，云端需要。"""

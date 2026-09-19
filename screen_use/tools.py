@@ -27,6 +27,9 @@ class ScreenUse:
         settings: 配置，默认从 .env 读取
         provider: 自定义 VLM Provider，默认按配置创建（VLM 未配置时高层视觉工具不可用）
         confirm_callback: 危险动作确认钩子，签名为 (动作描述) -> bool，返回 False 则取消执行
+        memory: 经验存储
+        jev: 可选 Jev 快路径引擎（desktop-jev 阶段 4）。None 且配置了 JEV_CHECKPOINT
+            时按配置懒加载；两者都没有 = 纯 VLM 循环（接入前行为）。
     """
 
     def __init__(
@@ -36,15 +39,26 @@ class ScreenUse:
         provider: VisionProvider | None = None,
         confirm_callback: Callable[[str], bool] | None = None,
         memory: ExperienceStore | None = None,
+        jev=None,
     ):
         self.settings = settings or get_settings()
         self.executor = Executor(dry_run=dry_run)
         self.confirm_callback = confirm_callback
         self._provider = provider
         self.memory = memory or ExperienceStore()  # 元学习：经验与词汇记忆
+        self.jev = jev if jev is not None else self._maybe_load_jev()
         self._elements: list[UIElement] = []  # 最近一次 list_ui_elements 的缓存
         self._foreground_title = ""           # 最近一次枚举时的前台窗口标题
         self._last_scale = 1.0                # 最近一次 screenshot 的坐标换算比例
+
+    def _maybe_load_jev(self):
+        """按配置懒加载 Jev（JEV_CHECKPOINT）；未配置或加载失败 → None（退纯 VLM）。"""
+        ckpt = (getattr(self.settings, "jev_checkpoint", "") or "").strip()
+        if not ckpt:
+            return None
+        from screen_use.jev_bridge import load_engine
+
+        return load_engine(ckpt)
 
     # ---- Provider 懒加载 ----
 
@@ -388,16 +402,19 @@ class ScreenUse:
     def run_task(self, goal: str, max_steps: int = 40, on_step=None) -> dict:
         """自主任务循环：observe → think → act → verify，直到任务完成。
 
-        需要 VLM。on_step: 可选回调 fn(Step)，用于实时观察每一步。
+        需要 VLM（未接 Jev）；接上 Jev 后每步先走快路径，低置信才升级 VLM。
+        on_step: 可选回调 fn(Step)，用于实时观察每一步。
 
         返回协议（cascade protocol §4）：
-        - 完成: {"status": "done", "result": ..., "steps": [...]}
+        - 完成: {"status": "done", "result": ..., "steps": [...], "metrics": {...}}
         - 升级: EscalationResult（带地图退）——宿主据 observation 直接接管，
           无需重新截图枚举。
+        metrics 里带北极星指标原料：每步走哪一环、各环耗时、省掉几次截图。
         """
         from screen_use.agent import VisualLoop
 
-        result = VisualLoop(self, max_steps=max_steps).run(goal, on_step=on_step).to_dict()
+        result = VisualLoop(self, max_steps=max_steps, jev=self.jev).run(
+            goal, on_step=on_step).to_dict()
         if result["done"]:
             return {"status": "done", **result}
         return self._build_escalation(result)
@@ -405,9 +422,16 @@ class ScreenUse:
     def _build_escalation(self, result: dict) -> dict:
         """任务未完成时构造 EscalationResult（cascade protocol §4 交接包）。"""
         steps = result.get("steps", [])
+        metrics = result.get("metrics") or {}
         think_errors = sum(1 for s in steps if s["action"] == "think_error")
         failures = sum(1 for s in steps if not s["ok"])
-        if think_errors >= 3 and think_errors >= len(steps) // 2:
+        if result.get("escalated"):
+            # Jev 主动认输（BLOCKED）：不是超时/折腾，直接带地图退
+            reason = {"class": result.get("escalation_reason") or "blocked_action",
+                      "detail": result.get("result", "快路径判定无法完成")}
+            suggestion = ("目标元素不存在或不可达（快路径已判定），宿主据 observation "
+                          "判断后接管，或把目标拆小重试。")
+        elif think_errors >= 3 and think_errors >= len(steps) // 2:
             reason = {"class": "think_error",
                       "detail": f"VLM 决策连续失败 {think_errors}/{len(steps)} 步"}
             suggestion = "检查 VLM 配置/连接，或宿主用原子工具直接接管。"
@@ -430,8 +454,8 @@ class ScreenUse:
 
         return {
             "status": "escalated",
-            "from_ring": "task",
-            "engine": "vlm",
+            "from_ring": "jev" if metrics.get("jev_steps") else "task",
+            "engine": metrics.get("ring") or ("jev" if self.jev is not None else "vlm"),
             "reason": reason,
             "progress": {
                 "steps_done": steps,
@@ -439,6 +463,7 @@ class ScreenUse:
             },
             "observation": observation,
             "suggestion": suggestion,
+            "metrics": metrics,
             # 兼容字段
             "goal": result["goal"], "done": False, "result": result["result"],
         }

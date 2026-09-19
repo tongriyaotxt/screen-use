@@ -1,0 +1,350 @@
+{
+ "ckpt": "checkpoints/jev-Qwen3-0.6B-e3",
+ "data": [
+  "C:\\Users\\fude-\\.screen_use\\traces_mock",
+  "C:\\Users\\fude-\\.screen_use\\traces_full"
+ ],
+ "samples": 3176,
+ "slices": [
+  {
+   "seed": 0,
+   "n": 330,
+   "op_acc": 0.9455,
+   "joint_acc": 0.6879,
+   "ece_before": 0.0893,
+   "t_op": 1.35,
+   "t_elem": 1.0
+  },
+  {
+   "seed": 1,
+   "n": 332,
+   "op_acc": 0.9608,
+   "joint_acc": 0.7861,
+   "ece_before": 0.0512,
+   "t_op": 0.95,
+   "t_elem": 0.85
+  },
+  {
+   "seed": 2,
+   "n": 310,
+   "op_acc": 0.9806,
+   "joint_acc": 0.8,
+   "ece_before": 0.0718,
+   "t_op": 0.75,
+   "t_elem": 0.75
+  }
+ ],
+ "summary": {
+  "n_slices": 3,
+  "op_acc": 0.9623,
+  "op_acc_sd": 0.0176,
+  "joint_acc": 0.758,
+  "joint_acc_sd": 0.0611,
+  "ece_before": 0.0708
+ },
+ "deployed": {
+  "n": 300,
+  "tau": 0.77,
+  "isotonic": true,
+  "escalation_rate": 0.3233,
+  "coverage": 0.6767,
+  "coverage_by_source": {
+   "mock_oracle": 0.6767
+  },
+  "op_acc": 0.97,
+  "joint_acc": 0.7933,
+  "latency_ms": {
+   "mean": 99.0,
+   "p50": 115.5,
+   "p95": 159.9
+  },
+  "curve": {
+   "target_coverage": 0.725,
+   "recommended_tau": 0.72,
+   "recommended": {
+    "tau": 0.72,
+    "coverage": 0.7433,
+    "risk": 0.1031,
+    "escalation_rate": 0.2567
+   },
+   "points": [
+    {
+     "tau": 0.5,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.51,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.52,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.53,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.54,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.55,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.56,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.57,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.58,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.59,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.6,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.61,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.62,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.63,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.64,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.65,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.66,
+     "coverage": 0.8667,
+     "risk": 0.1462,
+     "escalation_rate": 0.1333
+    },
+    {
+     "tau": 0.67,
+     "coverage": 0.7467,
+     "risk": 0.1027,
+     "escalation_rate": 0.2533
+    },
+    {
+     "tau": 0.68,
+     "coverage": 0.7467,
+     "risk": 0.1027,
+     "escalation_rate": 0.2533
+    },
+    {
+     "tau": 0.69,
+     "coverage": 0.7467,
+     "risk": 0.1027,
+     "escalation_rate": 0.2533
+    },
+    {
+     "tau": 0.7,
+     "coverage": 0.7467,
+     "risk": 0.1027,
+     "escalation_rate": 0.2533
+    },
+    {
+     "tau": 0.71,
+     "coverage": 0.7467,
+     "risk": 0.1027,
+     "escalation_rate": 0.2533
+    },
+    {
+     "tau": 0.72,
+     "coverage": 0.7433,
+     "risk": 0.1031,
+     "escalation_rate": 0.2567
+    },
+    {
+     "tau": 0.73,
+     "coverage": 0.7433,
+     "risk": 0.1031,
+     "escalation_rate": 0.2567
+    },
+    {
+     "tau": 0.74,
+     "coverage": 0.7433,
+     "risk": 0.1031,
+     "escalation_rate": 0.2567
+    },
+    {
+     "tau": 0.75,
+     "coverage": 0.7433,
+     "risk": 0.1031,
+     "escalation_rate": 0.2567
+    },
+    {
+     "tau": 0.76,
+     "coverage": 0.6767,
+     "risk": 0.0936,
+     "escalation_rate": 0.3233
+    },
+    {
+     "tau": 0.77,
+     "coverage": 0.6767,
+     "risk": 0.0936,
+     "escalation_rate": 0.3233
+    },
+    {
+     "tau": 0.78,
+     "coverage": 0.57,
+     "risk": 0.0526,
+     "escalation_rate": 0.43
+    },
+    {
+     "tau": 0.79,
+     "coverage": 0.57,
+     "risk": 0.0526,
+     "escalation_rate": 0.43
+    },
+    {
+     "tau": 0.8,
+     "coverage": 0.57,
+     "risk": 0.0526,
+     "escalation_rate": 0.43
+    },
+    {
+     "tau": 0.81,
+     "coverage": 0.5633,
+     "risk": 0.0533,
+     "escalation_rate": 0.4367
+    },
+    {
+     "tau": 0.82,
+     "coverage": 0.5633,
+     "risk": 0.0533,
+     "escalation_rate": 0.4367
+    },
+    {
+     "tau": 0.83,
+     "coverage": 0.56,
+     "risk": 0.0536,
+     "escalation_rate": 0.44
+    },
+    {
+     "tau": 0.84,
+     "coverage": 0.56,
+     "risk": 0.0536,
+     "escalation_rate": 0.44
+    },
+    {
+     "tau": 0.85,
+     "coverage": 0.4567,
+     "risk": 0.0292,
+     "escalation_rate": 0.5433
+    },
+    {
+     "tau": 0.86,
+     "coverage": 0.4567,
+     "risk": 0.0292,
+     "escalation_rate": 0.5433
+    },
+    {
+     "tau": 0.87,
+     "coverage": 0.4567,
+     "risk": 0.0292,
+     "escalation_rate": 0.5433
+    },
+    {
+     "tau": 0.88,
+     "coverage": 0.4567,
+     "risk": 0.0292,
+     "escalation_rate": 0.5433
+    },
+    {
+     "tau": 0.89,
+     "coverage": 0.4567,
+     "risk": 0.0292,
+     "escalation_rate": 0.5433
+    },
+    {
+     "tau": 0.9,
+     "coverage": 0.4567,
+     "risk": 0.0292,
+     "escalation_rate": 0.5433
+    },
+    {
+     "tau": 0.91,
+     "coverage": 0.4567,
+     "risk": 0.0292,
+     "escalation_rate": 0.5433
+    },
+    {
+     "tau": 0.92,
+     "coverage": 0.4533,
+     "risk": 0.0294,
+     "escalation_rate": 0.5467
+    },
+    {
+     "tau": 0.93,
+     "coverage": 0.34,
+     "risk": 0.0196,
+     "escalation_rate": 0.66
+    },
+    {
+     "tau": 0.94,
+     "coverage": 0.34,
+     "risk": 0.0196,
+     "escalation_rate": 0.66
+    },
+    {
+     "tau": 0.95,
+     "coverage": 0.34,
+     "risk": 0.0196,
+     "escalation_rate": 0.66
+    }
+   ]
+  }
+ }
+}

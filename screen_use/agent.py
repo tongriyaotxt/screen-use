@@ -7,6 +7,13 @@
   4. verify:  下一轮截图即为验证；VLM 判断任务是否完成
 
 此功能需要 VLM（本地 Ollama 或云端均可）。
+
+**Jev 快路径（desktop-jev 阶段 4，cascade protocol 中环）**：
+构造时传 `jev`（`training/serve.py::JevDecision`）即开启三级决策路由——
+每步先问 Jev（单次前向 ~0.1s，只要元素表不要截图）；Jev 高置信 → 直接执行；
+低置信/不可执行 → 带着 Jev 的判断升级给 VLM 慢路径（§4 带地图退）；
+Jev 输出 BLOCKED（认输）→ 不再烧 VLM，直接交宿主接管。
+`jev=None` 时行为与接入前完全一致（纯 VLM 循环）。
 """
 
 from __future__ import annotations
@@ -17,6 +24,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from screen_use import jev_bridge
 from screen_use.memory import ExperienceStore, TraceRecorder
 from screen_use.reflect import (
     StuckSignal,
@@ -66,6 +74,17 @@ _LOOP_PROMPT = """你是一个桌面操作 Agent。根据截图和任务，决�
 _ACTIONS = ("click_id", "click", "type", "hotkey", "press", "scroll", "wait", "done")
 
 
+def _new_metrics() -> dict:
+    """北极星指标原料：每一步走哪一环、各环耗时、省掉多少次截图。"""
+    return {
+        "wall_ms": 0.0, "steps": 0,
+        "jev_steps": 0, "vlm_steps": 0, "jev_escalations": 0, "jev_errors": 0,
+        "vlm_calls": 0, "screenshot_calls": 0,
+        "jev_ms": 0.0, "vlm_ms": 0.0, "observe_ms": 0.0, "act_ms": 0.0,
+        "ring": "none",
+    }
+
+
 @dataclass
 class Step:
     index: int
@@ -74,6 +93,7 @@ class Step:
     args: dict[str, Any]
     ok: bool
     detail: str = ""
+    ring: str = "vlm"  # 决策来源：jev 快路径 / vlm 慢路径
 
 
 @dataclass
@@ -82,15 +102,21 @@ class TaskResult:
     done: bool
     result: str
     steps: list[Step] = field(default_factory=list)
+    escalated: bool = False          # 由 Jev 主动认输（BLOCKED）而非步数耗尽
+    escalation_reason: str = ""      # 升级原因分类（cascade protocol §4）
+    metrics: dict = field(default_factory=_new_metrics)
 
     def to_dict(self) -> dict:
         return {
             "goal": self.goal,
             "done": self.done,
             "result": self.result,
+            "escalated": self.escalated,
+            "escalation_reason": self.escalation_reason,
+            "metrics": dict(self.metrics),
             "steps": [
                 {"index": s.index, "thought": s.thought, "action": s.action,
-                 "args": s.args, "ok": s.ok, "detail": s.detail}
+                 "args": s.args, "ok": s.ok, "detail": s.detail, "ring": s.ring}
                 for s in self.steps
             ],
         }
@@ -179,19 +205,32 @@ def _iter_json_objects(text: str):
 
 
 class VisualLoop:
-    """视觉行为循环执行器。通过 ScreenUse 实例使用：tools.run_task(goal)。"""
+    """视觉行为循环执行器。通过 ScreenUse 实例使用：tools.run_task(goal)。
+
+    Args:
+        tools: ScreenUse 门面
+        max_steps: 最大步数
+        step_delay: 每步之间的固定等待
+        memory: 经验存储（默认 ~/.screen_use）
+        jev: 可选 Jev 快路径引擎（`.decide(goal, foreground, elements, history) -> dict`）
+    """
 
     def __init__(self, tools: ScreenUse, max_steps: int = 40, step_delay: float = 0.5,
-                 memory: ExperienceStore | None = None):
+                 memory: ExperienceStore | None = None, jev=None):
         self.tools = tools
         self.max_steps = max_steps
         self.step_delay = step_delay
         self.memory = memory or ExperienceStore()
+        self.jev = jev
+        self._metrics: dict | None = None  # 当前 run 的指标桶（_observe 记截图次数用）
 
     def run(self, goal: str, on_step=None) -> TaskResult:
         """执行任务。on_step: 可选回调 fn(Step)，用于实时观察/日志。"""
         result = TaskResult(goal=goal, done=False, result="达到最大步数仍未完成")
-        history: list[str] = []
+        metrics = result.metrics
+        self._metrics = metrics  # 供 _observe 记截图次数（run 结束清空）
+        history: list[str] = []        # 中文历史（给 VLM 看）
+        jev_history: list[str] = []    # 训练同构历史（给 Jev 看，格式与 SFT 一致）
         reflection = ""   # 内省结论，注入下一轮 prompt
         prev_fingerprint = ""  # 上一轮截图指纹，用于检测“动作无效”
         prev_title = ""        # 上一轮前台窗口标题，用于检测意外弹窗
@@ -208,96 +247,212 @@ class VisualLoop:
             except OSError:
                 recorder = None
 
-        for i in range(1, self.max_steps + 1):
-            # observe（发给 VLM 的图用 vlm_max_size：更小 → TTFT 更低；click_id 不依赖分辨率）
-            shot = self.tools.screenshot(
-                annotate=True, max_size=self.tools.settings.vlm_max_size
-            )
-            legend = "\n".join(
-                f"{el['id']}: [{el['window_title']}] [{el['control_type']}] {el['name'] or '(无名)'}"
-                for el in shot["elements"]
-            ) or "(无可交互元素)"
-            hist_text = "\n".join(history) if history else "(无)"
-            foreground = shot.get("foreground_title") or "(未知)"
+        t_start = time.perf_counter()
+        try:
+            for i in range(1, self.max_steps + 1):
+                # ---- observe：Jev 快路径只要元素表（零截图/零编码），否则照旧截图 ----
+                t_obs = time.perf_counter()
+                shot, legend, foreground = self._observe()
+                metrics["observe_ms"] += (time.perf_counter() - t_obs) * 1000
+                hist_text = "\n".join(history) if history else "(无)"
 
-            # think（决策失败记为失败步骤继续循环，不中断任务）
-            prompt = _LOOP_PROMPT.format(
-                goal=goal, legend=legend, history=hist_text, foreground=foreground,
-                experience=experience, reflection=reflection,
-                width=shot["width"], height=shot["height"], scale=shot["scale"],
-            )
-            reflection = ""  # 反思只生效一轮
-            try:
-                decisions = self._think(shot["image_base64"], prompt)
-            except RuntimeError as e:
-                step = Step(index=i, thought="", action="think_error",
-                            args={}, ok=False, detail=str(e))
-                result.steps.append(step)
-                history.append(f"第{i}步: 决策失败 -> {e}")
-                self._trace(recorder, step, shot)
-                if on_step:
-                    on_step(step)
-                time.sleep(self.step_delay)
-                continue
+                # ---- think：Jev 快路径优先，失效/低置信才落 VLM ----
+                decisions: list[dict] | None = None
+                ring = "vlm"
+                jev_hint = ""
+                if self.jev is not None:
+                    jev_decision = self._jev_decide(goal, foreground, shot, jev_history,
+                                                    metrics)
+                    if jev_decision is not None and jev_decision["action"] == "BLOCKED":
+                        # 认输：不烧 VLM 一轮，直接按 §4 交宿主（带观测快照）
+                        step = Step(index=i, thought=f"jev:{jev_decision['confidence']:.2f}",
+                                    action="blocked", args={"reason": "Jev 判定无法完成"},
+                                    ok=True, detail="Jev 认输（BLOCKED）", ring="jev")
+                        result.steps.append(step)
+                        metrics["jev_steps"] += 1
+                        self._trace(recorder, step, shot)
+                        if on_step:
+                            on_step(step)
+                        result.escalated = True
+                        result.escalation_reason = "blocked_action"
+                        result.result = "Jev 判定目标不可达（BLOCKED）"
+                        self._record(result)
+                        return result
+                    decision = (jev_bridge.to_action(jev_decision)
+                                if jev_decision is not None else None)
+                    if decision is not None and not jev_decision.get("escalate"):
+                        decisions, ring = [decision], "jev"
+                        metrics["jev_steps"] += 1
+                    else:
+                        metrics["jev_escalations"] += 1
+                        jev_hint = self._jev_hint(jev_decision)
 
-            # act：依次执行本轮决策（batch 时一轮可含多个动作）
-            for decision in decisions:
-                step = Step(
-                    index=i,
-                    thought=decision.get("thought", ""),
-                    action=decision["action"],
-                    args={k: v for k, v in decision.items() if k not in ("thought", "action")},
-                    ok=True,
-                )
+                if decisions is None:
+                    # 慢路径：Jev 升级或未接入 → 补一张 SoM 截图走 VLM
+                    if shot.get("image_base64") is None:
+                        t_obs = time.perf_counter()
+                        shot, legend, foreground = self._observe(full=True)
+                        metrics["observe_ms"] += (time.perf_counter() - t_obs) * 1000
+                    prompt = _LOOP_PROMPT.format(
+                        goal=goal, legend=legend, history=hist_text, foreground=foreground,
+                        experience=experience, reflection=reflection,
+                        width=shot["width"], height=shot["height"], scale=shot["scale"],
+                    ) + jev_hint
+                    reflection = ""  # 反思只生效一轮
+                    t_vlm = time.perf_counter()
+                    try:
+                        decisions = self._think(shot["image_base64"], prompt)
+                    except RuntimeError as e:
+                        metrics["vlm_ms"] += (time.perf_counter() - t_vlm) * 1000
+                        metrics["vlm_calls"] += 1
+                        metrics["vlm_steps"] += 1  # 这一轮确实走了 VLM（只是没解析出动作）
+                        step = Step(index=i, thought="", action="think_error",
+                                    args={}, ok=False, detail=str(e))
+                        result.steps.append(step)
+                        history.append(f"第{i}步: 决策失败 -> {e}")
+                        self._trace(recorder, step, shot)
+                        if on_step:
+                            on_step(step)
+                        time.sleep(self.step_delay)
+                        continue
+                    metrics["vlm_ms"] += (time.perf_counter() - t_vlm) * 1000
+                    metrics["vlm_calls"] += 1
+                    metrics["vlm_steps"] += 1
 
-                if step.action == "done":
-                    result.done = True
-                    result.result = str(decision.get("result", "完成"))
+                # ---- act：依次执行本轮决策（batch 时一轮可含多个动作）----
+                for decision in decisions:
+                    step = Step(
+                        index=i,
+                        thought=decision.get("thought", ""),
+                        action=decision["action"],
+                        args={k: v for k, v in decision.items()
+                              if k not in ("thought", "action")},
+                        ok=True,
+                        ring=ring,
+                    )
+
+                    if step.action == "done":
+                        result.done = True
+                        result.result = str(decision.get("result", "完成"))
+                        result.steps.append(step)
+                        metrics["steps"] = len(result.steps)
+                        self._trace(recorder, step, shot)
+                        if on_step:
+                            on_step(step)
+                        self._record(result)
+                        return result
+
+                    t_act = time.perf_counter()
+                    try:
+                        detail = self._act(decision, shot.get("scale", 1.0))
+                        step.detail = detail
+                    except Exception as e:  # 动作失败不中断，让 VLM 下一轮看到并纠偏
+                        step.ok = False
+                        step.detail = f"动作失败: {e}"
+                    metrics["act_ms"] += (time.perf_counter() - t_act) * 1000
+
                     result.steps.append(step)
+                    metrics["steps"] = len(result.steps)
+                    history.append(
+                        f"第{i}步: {step.action} {step.args} -> {'成功' if step.ok else step.detail}"
+                    )
+                    jev_history.append(
+                        jev_bridge.history_entry(step.action, step.args, step.ok)
+                    )
                     self._trace(recorder, step, shot)
                     if on_step:
                         on_step(step)
-                    self._record(result)
-                    return result
+                    if not step.ok:
+                        break  # batch 中某步失败即中止本轮剩余动作，等下轮观察纠偏
 
-                try:
-                    detail = self._act(decision, shot["scale"])
-                    step.detail = detail
-                except Exception as e:  # 动作失败不中断，让 VLM 下一轮看到并纠偏
-                    step.ok = False
-                    step.detail = f"动作失败: {e}"
-
-                result.steps.append(step)
-                history.append(
-                    f"第{i}步: {step.action} {step.args} -> {'成功' if step.ok else step.detail}"
+                # 内省：困难分类检测 → 针对性提示词引导反思
+                # 指纹取元素列表（不含每轮重排的 id），不要用带 SoM 标注的截图（标注会误变）
+                fingerprint = elements_fingerprint(shot["elements"])
+                title = shot.get("foreground_title") or ""
+                signal = StuckSignal(
+                    steps=result.steps,
+                    screen_changed=fingerprint != prev_fingerprint,
+                    elements_count=len(shot["elements"]),
+                    window_title_changed=bool(prev_title and title and title != prev_title),
                 )
-                self._trace(recorder, step, shot)
-                if on_step:
-                    on_step(step)
-                if not step.ok:
-                    break  # batch 中某步失败即中止本轮剩余动作，等下轮观察纠偏
+                prev_fingerprint, prev_title = fingerprint, title
+                stuck_type = classify_stuck(signal)
+                if stuck_type and i < self.max_steps:
+                    # 复用本轮截图（带 SoM 标注），不再重复截图；快路径无图时补一张
+                    if shot.get("image_base64") is None:
+                        shot, legend, foreground = self._observe(full=True)
+                    reflection = self._reflect(stuck_type, goal, history,
+                                               shot["image_base64"])
+                    history.append(f"[反思·{stuck_type.value}] {reflection}")
 
-            # 内省：困难分类检测 → 针对性提示词引导反思
-            # 指纹取元素列表（不含每轮重排的 id），不要用带 SoM 标注的截图（标注会误变）
-            fingerprint = elements_fingerprint(shot["elements"])
-            title = shot.get("foreground_title") or ""
-            signal = StuckSignal(
-                steps=result.steps,
-                screen_changed=fingerprint != prev_fingerprint,
-                elements_count=len(shot["elements"]),
-                window_title_changed=bool(prev_title and title and title != prev_title),
-            )
-            prev_fingerprint, prev_title = fingerprint, title
-            stuck_type = classify_stuck(signal)
-            if stuck_type and i < self.max_steps:
-                # 复用本轮截图（带 SoM 标注），不再重复截图
-                reflection = self._reflect(stuck_type, goal, history, shot["image_base64"])
-                history.append(f"[反思·{stuck_type.value}] {reflection}")
-
-            time.sleep(self.step_delay)
+                time.sleep(self.step_delay)
+        finally:
+            metrics["wall_ms"] = (time.perf_counter() - t_start) * 1000
+            metrics["ring"] = ("hybrid" if metrics["jev_steps"] and metrics["vlm_steps"]
+                               else "jev" if metrics["jev_steps"]
+                               else "vlm" if metrics["vlm_steps"] else "none")
+            self._metrics = None
 
         self._record(result)
         return result
+
+    # ================= 观测 =================
+
+    def _observe(self, full: bool = False) -> tuple[dict, str, str]:
+        """观测 → (shot, legend, foreground)。
+
+        full=False 且接了 Jev 时只枚举 UIA 元素表（零截图、零 JPEG 编码，
+        快路径每步省的就是这块）；full=True 或纯 VLM 模式走原 screenshot(annotate)。
+        """
+        if self.jev is not None and not full:
+            data = self.tools.list_ui_elements()
+            shot = {
+                "image_base64": None, "scale": 1.0, "width": 0, "height": 0,
+                "foreground_title": data["foreground_title"],
+                "elements": data["elements"],
+            }
+        else:
+            shot = self.tools.screenshot(
+                annotate=True, max_size=self.tools.settings.vlm_max_size
+            )
+            m = getattr(self, "_metrics", None)
+            if m is not None:
+                m["screenshot_calls"] += 1  # 北极星指标：快路径省下的截图次数
+        return shot, _legend(shot["elements"]), (shot.get("foreground_title") or "(未知)")
+
+    # ================= Jev 快路径 =================
+
+    def _jev_decide(self, goal: str, foreground: str, shot: dict,
+                    jev_history: list[str], metrics: dict) -> dict | None:
+        """问一次 Jev（异常只降级不中断）。返回 None = 本步直接走 VLM。"""
+        t0 = time.perf_counter()
+        try:
+            decision = self.jev.decide(goal, foreground, shot["elements"],
+                                       list(jev_history[-4:]))
+        except Exception as e:  # noqa: BLE001 - 加速组件不能把主流程拖挂
+            metrics["jev_errors"] += 1
+            metrics["jev_ms"] += (time.perf_counter() - t0) * 1000
+            shot["_jev_error"] = str(e)
+            return None
+        metrics["jev_ms"] += float(decision.get("latency_ms")
+                                   or (time.perf_counter() - t0) * 1000)
+        return decision
+
+    @staticmethod
+    def _jev_hint(decision: dict | None) -> str:
+        """升级时的「带地图退」：把 Jev 的判断和置信度告诉 VLM，但不让它盲从。"""
+        if decision is None:
+            return ""
+        op = decision.get("action", "?")
+        conf = float(decision.get("confidence") or 0.0)
+        bits = [f"快速决策器（小模型）倾向 {op}"]
+        if decision.get("element_id") is not None:
+            bits.append(f"元素 #{decision['element_id']}")
+        if decision.get("text"):
+            bits.append(f"文本 {decision['text']!r}")
+        bits.append(f"置信度 {conf:.2f} 低于阈值")
+        return ("\n【快路径提示】" + "，".join(bits)
+                + "。请独立判断，不要盲从；若你也认为无法完成，请输出 done 说明原因。")
 
     def _trace(self, recorder: TraceRecorder | None, step: Step, shot: dict) -> None:
         """desktop-jev 阶段 0：落盘一步「元素表 + 决策 + 结果」（写入失败不影响任务）。"""
@@ -307,6 +462,7 @@ class VisualLoop:
             recorder.record_step(
                 step.index, shot.get("foreground_title") or "",
                 shot.get("elements", []), step.action, step.args, step.ok, step.detail,
+                source="jev" if step.ring == "jev" else "vlm_trace",
             )
         except OSError:
             pass
@@ -375,6 +531,20 @@ class VisualLoop:
         if action == "click_id":
             r = t.click_element_id(int(decision["id"]))
             return f"点击元素 #{decision['id']}"
+        if action == "double_click":
+            if decision.get("id") is not None:
+                t.click_element_id(int(decision["id"]))
+                return f"双击元素 #{decision['id']}"
+            x, y = int(decision["x"] * scale), int(decision["y"] * scale)
+            t.double_click(x, y)
+            return f"双击 ({x}, {y})"
+        if action == "right_click":
+            if decision.get("id") is not None:
+                t.click_element_id(int(decision["id"]))
+                return f"右键元素 #{decision['id']}"
+            x, y = int(decision["x"] * scale), int(decision["y"] * scale)
+            t.right_click(x, y)
+            return f"右键 ({x}, {y})"
         if action == "click":
             # 截图坐标 → 真实屏幕坐标
             x, y = int(decision["x"] * scale), int(decision["y"] * scale)
@@ -396,3 +566,10 @@ class VisualLoop:
             time.sleep(min(float(decision.get("seconds", 1)), 10))
             return "等待"
         raise ValueError(f"不支持的动作: {action}")
+
+
+def _legend(elements: list[dict]) -> str:
+    return "\n".join(
+        f"{el['id']}: [{el['window_title']}] [{el['control_type']}] {el['name'] or '(无名)'}"
+        for el in elements
+    ) or "(无可交互元素)"
