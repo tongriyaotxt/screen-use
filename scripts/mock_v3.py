@@ -171,7 +171,12 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
             spec.setdefault("buttons", []).append((name, True))
 
     def add_icon_buttons(n: int) -> None:
-        """无名图标按钮：对齐真实桌面 11% 的无名元素比例（Qt 空文本按钮 UIA Name 为空）。"""
+        """无名图标控件：对齐真实桌面 11% 的无名元素比例。
+
+        真实那批是**窗口按钮**（最小化/最大化/关闭，实测 bbox 69×60 在屏幕右上角）：
+        UIA Name 为空，但像素里有图形。图形由 `mock_env._glyph_icon` 画
+        （2026-09-19 owner 报「我没看到纯图标」后才补的——之前只造了空白按钮）。
+        """
         if not mid:
             return
         for _ in range(max(0, n)):
@@ -462,6 +467,20 @@ def _abort_on_empty_observation(ep: int, episode_id: str, n_elem: int,
         f"继续跑只会量产空观测的垃圾数据。")
 
 
+def _icon_controls_lost_their_blank_name(spec: dict, observed: list[dict]) -> bool:
+    """spec 掺了无名按钮，观测里却一个无名元素都没有 → 图标把 UIA Name 撑起来了？
+
+    纯图标控件的全部意义就是「Name 为空」（真实域实测 10.2%，全是 ButtonControl）。
+    如果给按钮 `setIcon` 之后 UIA 开始报名字，这条分布对齐就**静默失效**了
+    （mock 从 10.4% 掉到 0%，模型又回到"每个控件都有名字"的世界）。
+    只在 spec 真有无名按钮的回合检查，避免误报。
+    """
+    want = sum(1 for n, _ in spec.get("buttons", []) if not str(n).strip())
+    if not want:
+        return False
+    return not any(not str(e.get("name", "")).strip() for e in observed)
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser()
@@ -499,6 +518,7 @@ def main() -> None:
     out_dir = Path(args.out).expanduser() if args.out else _default_home() / "traces_mock_v3"
     runner = mock_env.EpisodeRunner(out_dir)
     total = {"episodes": 0, "steps": 0, "ok": 0, "elements": []}
+    icon_warned = False
 
     for ep in range(1, args.episodes + 1):
         spec, goal, steps = build_episode(rng, ep, args.target_elements,
@@ -518,12 +538,18 @@ def main() -> None:
             app.processEvents()
             time.sleep(0.4)
             stats = runner.run(win, goal, steps, episode_id)
-            n_elem = len(runner._observe(episode_id))
+            observed = runner._observe(episode_id)
         finally:
             # 确认框/弹层随窗口一起收（2026-09-19 卡死事故，见 MockWindow.teardown）
             win.teardown()
             app.processEvents()
+        n_elem = len(observed)
         _abort_on_empty_observation(ep, episode_id, n_elem, out_dir)
+        if not icon_warned and _icon_controls_lost_their_blank_name(spec, observed):
+            print(f"[warn] 第 {ep} 回合的 spec 里有无名图标按钮，但观测表里一个无名元素都没有"
+                  f"——图标可能被 UIA 当成了 Name，11% 无名这条分布对齐已失效，"
+                  f"查 _glyph_icon / accessibleName", flush=True)
+            icon_warned = True
         total["elements"].append(n_elem)
         total["episodes"] += 1
         total["steps"] += stats["steps"]

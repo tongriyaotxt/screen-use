@@ -23,7 +23,8 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLineEdit, QListWidget, QListWidgetItem,
     QCheckBox, QRadioButton, QComboBox, QTabWidget, QLabel, QStackedWidget,
@@ -64,6 +65,53 @@ def _tr(rng, text: str, english: bool) -> str:
 
 
 # ==================== 窗口构建 ====================
+
+_GLYPH_SHAPES = 6
+
+
+def _glyph_icon(shape: int, size: int = 16) -> QIcon:
+    """画一个只有图形、没有文字的图标（给"无名图标控件"用）。
+
+    2026-09-19 owner 报「我没看到纯图标」——查实：v3 掺的所谓"图标按钮"就是
+    `QPushButton("")`，**空白方块**，一个图形都没画。UIA 那条路看不出来（Name 本来就是空的，
+    分布对得上），但截图/SoM 那条路看到的是像素：真实桌面的无名按钮是窗口按钮
+    （实测 bbox 69×60 在屏幕右上角，图形是 ─ □ ✕），空白方块既不像它、也无谓地更难。
+
+    这里画的是**通用几何形状**（横杠/圆/三角/方框/加号/折线），不是语义图标：
+    mock 的 oracle 从不以无名控件为目标，画个"保存"图标会诱导 VLM 去点却被判错，
+    反而污染 VLM 对照。图形只负责"像素里有东西"这件事。
+    """
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(QColor(60, 60, 60))
+    pen.setWidthF(1.4)
+    p.setPen(pen)
+    m = 3.0
+    w = size - 2 * m
+    r = QRectF(m, m, w, w)
+    if shape == 0:      # 三道横杠
+        for k in range(3):
+            yy = m + 2 + k * (w - 4) / 2
+            p.drawLine(QPointF(m + 1, yy), QPointF(m + w - 1, yy))
+    elif shape == 1:    # 圆
+        p.drawEllipse(r)
+    elif shape == 2:    # 三角
+        p.drawPolygon(QPolygonF([QPointF(m + 1, m + w - 1),
+                                 QPointF(m + w / 2, m + 1),
+                                 QPointF(m + w - 1, m + w - 1)]))
+    elif shape == 3:    # 方框
+        p.drawRect(r)
+    elif shape == 4:    # 加号
+        p.drawLine(QPointF(m + w / 2, m + 1), QPointF(m + w / 2, m + w - 1))
+        p.drawLine(QPointF(m + 1, m + w / 2), QPointF(m + w - 1, m + w / 2))
+    else:               # 折线
+        p.drawLine(QPointF(m + 1, m + w - 1), QPointF(m + w / 2, m + w / 2))
+        p.drawLine(QPointF(m + w / 2, m + w / 2), QPointF(m + w - 1, m + 1))
+    p.end()
+    return QIcon(pm)
+
 
 class MockWindow(QWidget):
     """按 spec 构建的随机窗口。不抢焦点、固定角落小窗（零干扰）。"""
@@ -151,6 +199,11 @@ class MockWindow(QWidget):
         by0 = max(by0, y + 10)
         for i, (name, enabled) in enumerate(spec.get("buttons", [])):
             b = QPushButton(name, self)
+            if not name.strip():
+                # 无名按钮 = 纯图标控件：UIA Name 为空（与真实分布一致），但像素里得有图形
+                # （真实那批是窗口按钮 ─ □ ✕）。见 _glyph_icon 的说明。
+                b.setIcon(_glyph_icon(i % _GLYPH_SHAPES))
+                b.setIconSize(QSize(16, 16))
             b.setGeometry(bx0 + (i % cols) * (bw + gap_x),
                           by0 + (i // cols) * (bh + gap_y), bw, bh)
             b.setEnabled(enabled)

@@ -17,6 +17,7 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
+| 09-19 | **真画图标**（owner 报「我没看到纯图标」）：v3 所谓"图标按钮"其实是 `QPushButton("")` **空白方块**；真实那批是窗口按钮 ─ □ ✕（实测 945/9284=10.2% 无名、全是 ButtonControl、bbox 69×60 贴右上角）。现 `_glyph_icon()` 画通用几何图形（**刻意不画语义图标**，免得诱导 VLM 点错污染对照）+ 「无名比例归零」告警护栏 | `scripts/mock_env.py`、`scripts/mock_v3.py`、`tests/test_mock_windows.py`、BENCH.md §8.7 |
 | 09-19 | **修训练集标签污染**：`iter_samples` 的 docstring 写着「跳过…执行失败步」，代码里**没有这个判断** → 失败步（`args` 为空）被当成「CLICK 无目标元素」的**正样本**。实测 v3 14/290、v2 68/3100、真实 25/105 都中招（**v0 那轮就吃进去了**）。修后 v3 样本 290→276 | `training/common.py`、`tests/test_training_common.py`（+5 测试） |
 | 09-19 | **修窗口卡死事故**（owner 报障「哪个 mock 卡住了显示未响应」）：确认框是 QDialog 且**故意与主窗口同标题**，有些范式流程结束时把它留在打开状态，而 `win.close()` 只隐藏主窗口、关不掉独立顶层窗口 → 那个框赖在 owner 屏幕上，生成器进 idle-gate 阻塞事件循环后被 Windows 标成「(未响应)」。现 `MockWindow.teardown()` 按层收（弹层→确认框→本体）+ 回合边界 `sweep_stale_windows()` 兜底；进闸门前必清场 | `scripts/mock_env.py`、`scripts/mock_v3.py`、`tests/test_mock_windows.py`（+4 测试） |
 | 09-19 | **v3 流水线开跑**（1000 回合 / 2 epoch，idle-gate 60s，你离开电脑才动） | `scripts/run_pipeline.py`、`assets/bench/logs/pipeline_*.log` |

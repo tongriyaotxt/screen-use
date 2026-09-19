@@ -128,3 +128,57 @@ def test_sweep_catches_a_dialog_whose_parent_is_gone(monkeypatch):
     assert mock_env.sweep_stale_windows() >= 1
     app.processEvents()
     assert not _visible_mock_windows(app)
+
+
+# ---- 无名图标控件：Name 必须仍为空，同时像素里得有图形 ----
+# owner 2026-09-19 报「我没看到纯图标」——查实 v3 的"图标按钮"就是 QPushButton("")，
+# 空白方块，一个图形都没画（真实桌面那批是窗口按钮 ─ □ ✕，实测 bbox 69×60）。
+
+def test_blank_named_buttons_carry_a_real_glyph(monkeypatch):
+    app = _app(monkeypatch)
+    import mock_env
+    from PySide6.QtWidgets import QPushButton
+
+    rng = random.Random(11)
+    spec = mock_env._base_spec(rng)
+    spec["buttons"] = [("保存", True), ("", True), ("", True), ("取消", True)]
+    win = mock_env.MockWindow(rng, "icons", spec)
+    try:
+        blanks = [b for b in win.findChildren(QPushButton) if not b.text().strip()]
+        named = [b for b in win.findChildren(QPushButton) if b.text().strip()]
+        assert len(blanks) == 2, "前提不成立：没造出无名按钮"
+        for b in blanks:
+            icon = b.icon()
+            assert not icon.isNull(), "无名按钮没有图标 = 又变回空白方块"
+            assert not icon.pixmap(16, 16).toImage().isNull(), "图标是空的"
+        for b in named:
+            assert b.icon().isNull(), "有名字的按钮不该被塞图标（会改变原有外观）"
+    finally:
+        win.teardown()
+        app.processEvents()
+
+
+def test_glyph_shapes_are_distinct(monkeypatch):
+    """不同 shape 得画出不同图案，否则"图标"只是同一个方块复制粘贴。"""
+    app = _app(monkeypatch)
+    import mock_env
+
+    seen = set()
+    for shape in range(mock_env._GLYPH_SHAPES):
+        img = mock_env._glyph_icon(shape).pixmap(16, 16).toImage()
+        seen.add(bytes(img.constBits()))
+    assert len(seen) == mock_env._GLYPH_SHAPES, "有形状画出来是一模一样的"
+
+
+def test_icon_check_flags_a_collapsed_unnamed_ratio():
+    """给按钮加图标后若 UIA 开始报名字，10% 无名这条分布对齐会静默失效——要能报出来。"""
+    import mock_v3
+
+    spec = {"buttons": [("保存", True), ("", True)]}
+    assert mock_v3._icon_controls_lost_their_blank_name(
+        spec, [{"name": "保存"}, {"name": "确定"}]) is True
+    assert mock_v3._icon_controls_lost_their_blank_name(
+        spec, [{"name": "保存"}, {"name": ""}]) is False
+    # spec 里本来就没有无名按钮 → 不检查，免得误报
+    assert mock_v3._icon_controls_lost_their_blank_name(
+        {"buttons": [("保存", True)]}, [{"name": "保存"}]) is False
