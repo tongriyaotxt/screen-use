@@ -17,6 +17,7 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
+| 09-19 | **撤回"尺度对齐"并重修**（owner 一句「我没看到纯图标」牵出来的）：①**项目里有两个估算器**——`densify` 判"够了"用的是粗糙的 `estimate_elements`（把折叠树节点/子菜单项/视口外单元格全算上，虚报 **+31/回合**），验收报数用的是另一个；②`_observe` 按几何矩形捞外来元素，**owner 的终端窗口**（窗口标题就是对话名）贡献 3160 个元素、泄漏确认框 604 个，把假象坐实；③于是"报 87 / 实际 52 / 看到 86"三者互相佐证了一个不存在的对齐。修法：估算器只剩**一条真源**且改成**照 Qt 可见性数**、元素带 `pid` 只留本进程窗口、按真实构成（**76% 是按钮**）重做布局预算（按钮池 25→78、网格 3→8 行、窗口 1200×740）、加运行时自检（只认实测） | `scripts/mock_v3.py`、`scripts/mock_env.py`、`screen_use/perception/uia_tree.py`、`tests/test_mock_v3.py`、BENCH.md §7.1/§7.2 |
 | 09-19 | **真画图标**（owner 报「我没看到纯图标」）：v3 所谓"图标按钮"其实是 `QPushButton("")` **空白方块**；真实那批是窗口按钮 ─ □ ✕（实测 945/9284=10.2% 无名、全是 ButtonControl、bbox 69×60 贴右上角）。现 `_glyph_icon()` 画通用几何图形（**刻意不画语义图标**，免得诱导 VLM 点错污染对照）+ 「无名比例归零」告警护栏 | `scripts/mock_env.py`、`scripts/mock_v3.py`、`tests/test_mock_windows.py`、BENCH.md §8.7 |
 | 09-19 | **修训练集标签污染**：`iter_samples` 的 docstring 写着「跳过…执行失败步」，代码里**没有这个判断** → 失败步（`args` 为空）被当成「CLICK 无目标元素」的**正样本**。实测 v3 14/290、v2 68/3100、真实 25/105 都中招（**v0 那轮就吃进去了**）。修后 v3 样本 290→276 | `training/common.py`、`tests/test_training_common.py`（+5 测试） |
 | 09-19 | **修窗口卡死事故**（owner 报障「哪个 mock 卡住了显示未响应」）：确认框是 QDialog 且**故意与主窗口同标题**，有些范式流程结束时把它留在打开状态，而 `win.close()` 只隐藏主窗口、关不掉独立顶层窗口 → 那个框赖在 owner 屏幕上，生成器进 idle-gate 阻塞事件循环后被 Windows 标成「(未响应)」。现 `MockWindow.teardown()` 按层收（弹层→确认框→本体）+ 回合边界 `sweep_stale_windows()` 兜底；进闸门前必清场 | `scripts/mock_env.py`、`scripts/mock_v3.py`、`tests/test_mock_windows.py`（+4 测试） |
@@ -68,9 +69,10 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 ## 下一步（优先级 A > B > C，等 owner 指示或直接按 A 继续）
 
 - **A 补数据分布（第一优先级，理由见 BENCH.md §7）**：生成器已写好（`scripts/mock_v3.py`，
-  元素中位 87 对齐真实 84 / goal 语义化不照抄控件名 / 中英混排命名），
-  **状态：2026-09-19 13:40 已挂后台跑**（`--episodes 1000 --epochs 2 --idle-gate-s 60
-  --throttle-ms 50`，owner 开着电脑就静默停着、不弹窗；日志 `assets/bench/logs/pipeline_20260919-1340.log`）。
+  **元素中位 86 对齐真实 84**——注意这是 2026-09-19 重修后的**诚实**数字，之前的"87"
+  是估算器虚报 + 终端窗口垫高出来的假象，见 BENCH.md §7.2；goal 语义化不照抄控件名 / 中英混排命名），
+  **状态：2026-09-19 14:45 已挂后台跑**（`--episodes 1000 --epochs 2 --idle-gate-s 60
+  --throttle-ms 50`，owner 开着电脑就静默停着、不弹窗；日志 `assets/bench/logs/pipeline_*.log`）。
   **跑法（owner 离开电脑时，一条命令）**：
   ```
   ./.venv/Scripts/python.exe scripts/run_pipeline.py --i-am-away            # 3000 回合 + 3 epoch
