@@ -4,15 +4,20 @@
 
 ## 一句话状态
 
-**Jev 已接进 VisualLoop 快路径并跑通首测**：同一批 mock 任务每任务 **17.7s → 10.2s（1.74×）**，
-Jev 决策 p50 **43ms** vs VLM **5978ms**（139×）。但实测暴露两个新瓶颈：
-**观测（UIA 枚举 0.68s/步）**与**升级率（32–36%，压 TRAINING §7 的 35% 及格线）**。
-另修掉一个会让 τ 语义失效的校准 bug（详见 `research/desktop-jev/BENCH.md` §4）。
+**Jev 已接进 VisualLoop 快路径并跑通首测**：mock 域每任务 **17.7s → 10.2s（1.74×）**，
+Jev 决策 p50 **40ms** vs VLM **5978ms**。
+但真实域首测（traces_full 76 样本）暴露硬伤：**真实桌面元素表中位 84（mock 14）、token 2380（mock 457），
+Jev 的 joint_acc 从 0.77 掉到 0.17、升级率 90%** —— 泛化是当前第一瓶颈。
+已加**训练分布门控**（观测超出训练尺度就不问模型，直接升级）：真实域 Jev 侧耗时 452ms → **0ms**，
+mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上快路径的价值是 0、安全是满分**；
+要达成 owner 的成品标准（通用可用 + 快于人类），下一步必须补数据分布。
 
 ## 已完成（倒序）
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
+| 09-19 | **真实域泛化首测（R4）**：joint_acc 0.17 / 升级率 90% → 加训练分布门控 | `screen_use/jev_bridge.py::ood_check`、`training/calibrate.py::train_stats`、`assets/bench/offline_eval_realdomain.json` |
+| 09-19 | **后台窗口元素表缓存 + 点击前 bbox 校验**（观测 326ms → 153ms） | `screen_use/perception/uia_tree.py`、`tools.py::_fresh_element` |
 | 09-19 | **阶段 4 接入 + 北极星首测**（1.74×，报告见 BENCH.md） | `screen_use/jev_bridge.py`、`agent.py`、`scripts/bench_jev.py`、`scripts/eval_offline.py`、`scripts/smoke_jev_loop.py`、`scripts/bench_gui.py` |
 | 09-19 | 修校准接入 bug：等张断点落盘 + serve 侧插值；留出集再分半（半拟合/半选 τ）；重校准 τ=0.77 | `training/{calibrate,serve}.py`、`checkpoints/jev-Qwen3-0.6B-e3/calibration.json` |
 | 09-19 | serve 补 TYPE 的 goal-copy 文本（span 头解码） | `training/serve.py` |
@@ -52,19 +57,18 @@ Jev 决策 p50 **43ms** vs VLM **5978ms**（139×）。但实测暴露两个新�
 
 ## 下一步（优先级 A > B > C，等 owner 指示或直接按 A 继续）
 
-- **A 压升级率（零训练成本）**：✅ 已完成 2026-09-19 —— `training.calibrate --tau 0.72`
-  钉死（`calibration.json` 标 `tau_source: cli`），部署复核：覆盖率 0.743 / 升级率 0.257 /
-  风险 0.103 / 单步 p50 38.9ms。
-- **B 砍观测成本**：✅ 主体完成 2026-09-19。体检 + 四条路实测见 `research/desktop-jev/BENCH.md` §6：
-  后台窗口**元素表缓存**（默认开，TTL 2s，冷启 326ms → 热 153ms，元素表不缩水）·
-  升级步复用元素表（默认开）· 时间预算开关 `SCREEN_USE_UIA_BUDGET_MS`（默认 0=不限）·
-  多窗口并行无收益已回退。点击路径的安全阀：点/写前实时 bbox 校验，移位则刷新重解析，
-  再找不到明确报错（`element_still_valid` / `_fresh_element`）。
-- **C 真 GUI 端到端**：**只能在 owner 离开电脑时跑**。`scripts/bench_gui.py` 已备好
+- **A 补数据分布（第一优先级，理由见 BENCH.md §7）**：
+  - mock v3：窗口 40–120 元素（现在中位 14）、goal **不引用元素名**、中英同义词对
+    （乘以/×/Multiply by、等于/Equals）——把训练分布搬到真实尺度与语义上；
+  - 真实轨迹 up-weight（TRAINING §5 的 SFT-B：真实占比 ≥70%），并继续攒真实数据；
+  - 学出来的两阶段决策：小打分器把 80+ 元素缩到 ~20 候选再交给主模型
+    （**字符串短名单已证伪**：真实域 recall@10=0%，见 §7）。
+- **B 真 GUI 端到端**：**只能在 owner 离开电脑时跑**。`scripts/bench_gui.py` 已备好
   （mock 窗口 + 零鼠标执行器 + 真 VisualLoop；`--driver oracle|jev|vlm`；默认拒跑，需 `--allow-gui`；
   `--offscreen` 自检已过）。首次真窗口运行建议人在旁边。
-- **D SFT v1**：joint_acc 0.758 → ≥0.80；1.7B 基座 / 更多真实数据（腿 1 仍只有 105 步）。
-- **E 攒真实数据**：日常用 run_task 自然攒 `traces_full`（现在快路径步会标 `source=jev`）。
+- **C 通用性 + 人类基线**（成品标准的两个验收项）：按应用族（浏览器/Office/聊天/文件管理器/IDE）
+  各跑一组可验证任务；定义人类基线任务集与计时口径并实测。
+- **D 攒真实数据**：日常用 run_task 自然攒 `traces_full`（快路径步标 `source=jev`）。
 
 ## 环境备忘（坑都踩过了）
 

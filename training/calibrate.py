@@ -96,6 +96,7 @@ def main() -> None:
     model.eval()
 
     samples = iter_samples([Path(d).expanduser() for d in args.data])
+    stats = train_stats(samples, tok)
     _, hold = split_holdout(samples)  # 与训练同 seed 的留出集
     calib_s, select_s = split_calib_select(hold)
 
@@ -156,6 +157,7 @@ def main() -> None:
     result = {
         "temperature_op": t_op, "temperature_elem": t_elem,
         "isotonic": {"x": iso_x, "y": iso_y},  # serve 据此把原始 sigmoid → P(正确)
+        "train_stats": stats,                  # 训练分布尺度 → serve 侧门控（ood_check）
         "ece_before": round(ece_before, 4), "ece_after": round(ece_after, 4),
         "tau": best["tau"], "coverage": round(sel_cov, 3),
         "risk": round(best["risk"], 3),
@@ -168,6 +170,34 @@ def main() -> None:
         json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     shown = {k: v for k, v in result.items() if k not in ("selective_curve", "isotonic")}
     print(json.dumps(shown, ensure_ascii=False, indent=1))
+
+
+def train_stats(samples: list[dict], tok, limit: int = 500) -> dict:
+    """训练观测的尺度统计（元素数 / token 数）→ serve 侧的分布门控用。
+
+    2026-09-19 实测：mock 训练集元素数中位 14，真实桌面中位 84 —— 模型在后者上
+    joint_acc 0.15 / 升级率 90%。把这个尺度落盘，serve 就能"只在自己见过的
+    尺度上做决策"，不在分布内时直接升级，省掉一次必然被推翻的前向。
+    """
+    from training.common import serialize_observation
+
+    if not samples:
+        return {}
+    els = sorted(len(s["elements"]) for s in samples)
+    toks = sorted(
+        len(tok(serialize_observation(s["goal"], s["foreground"], s["elements"],
+                                      s["history"]))["input_ids"])
+        for s in samples[:limit]
+    )
+
+    def q(values: list[int], p: float) -> int:
+        return int(values[min(len(values) - 1, int(len(values) * p))])
+
+    return {
+        "n": len(samples),
+        "elements_p50": q(els, 0.5), "elements_p95": q(els, 0.95), "elements_max": els[-1],
+        "tokens_p50": q(toks, 0.5), "tokens_p95": q(toks, 0.95), "tokens_max": toks[-1],
+    }
 
 
 def split_calib_select(samples: list[dict]) -> tuple[list[dict], list[dict]]:

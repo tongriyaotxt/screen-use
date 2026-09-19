@@ -79,6 +79,7 @@ def _new_metrics() -> dict:
     return {
         "wall_ms": 0.0, "steps": 0,
         "jev_steps": 0, "vlm_steps": 0, "jev_escalations": 0, "jev_errors": 0,
+        "jev_ood": 0,  # 观测超出训练分布而直接升级的次数（没花前向）
         "vlm_calls": 0, "screenshot_calls": 0,
         "jev_ms": 0.0, "vlm_ms": 0.0, "observe_ms": 0.0, "act_ms": 0.0,
         "ring": "none",
@@ -286,6 +287,8 @@ class VisualLoop:
                         metrics["jev_steps"] += 1
                     else:
                         metrics["jev_escalations"] += 1
+                        if (jev_decision or {}).get("action") == "OOD":
+                            metrics["jev_ood"] += 1
                         jev_hint = self._jev_hint(jev_decision)
 
                 if decisions is None:
@@ -451,6 +454,9 @@ class VisualLoop:
         """升级时的「带地图退」：把 Jev 的判断和置信度告诉 VLM，但不让它盲从。"""
         if decision is None:
             return ""
+        if decision.get("detail"):
+            # 分布外（观测尺度远超训练集）：没有判断可交接，只说清原因
+            return f"\n【快路径提示】{decision['detail']}，本步直接交给慢路径判断。"
         op = decision.get("action", "?")
         conf = float(decision.get("confidence") or 0.0)
         bits = [f"快速决策器（小模型）倾向 {op}"]

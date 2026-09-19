@@ -1,0 +1,53 @@
+{
+ "ckpt": "checkpoints/jev-Qwen3-0.6B-e3",
+ "data": [
+  "C:\\Users\\fude-\\.screen_use\\traces_full"
+ ],
+ "samples": 76,
+ "slices": [
+  {
+   "seed": 0,
+   "n": 21,
+   "op_acc": 0.619,
+   "joint_acc": 0.0,
+   "ece_before": 0.3962,
+   "t_op": 2.7,
+   "t_elem": 1.35
+  },
+  {
+   "seed": 1,
+   "n": 9,
+   "op_acc": 0.6667,
+   "joint_acc": 0.3333,
+   "ece_before": 0.22,
+   "t_op": 0.5,
+   "t_elem": 0.8
+  }
+ ],
+ "summary": {
+  "n_slices": 2,
+  "op_acc": 0.6429,
+  "op_acc_sd": 0.0337,
+  "joint_acc": 0.1667,
+  "joint_acc_sd": 0.2357,
+  "ece_before": 0.3081
+ },
+ "deployed": {
+  "n": 60,
+  "tau": 0.72,
+  "isotonic": true,
+  "escalation_rate": 1.0,
+  "coverage": 0.0,
+  "coverage_by_source": {
+   "vlm_trace": 0.0
+  },
+  "op_acc": 0.0,
+  "joint_acc": 0.0,
+  "latency_ms": {
+   "mean": 0.0,
+   "p50": 0.0,
+   "p95": 0.0
+  },
+  "curve": {}
+ }
+}

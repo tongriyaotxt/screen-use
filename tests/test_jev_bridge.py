@@ -126,6 +126,30 @@ def test_history_entry_marks_out_of_set_actions_as_failure(action):
     assert _hist_entry(action, {"args": {}}, True) == "[决策失败 ✗]"
 
 
+# ---- 训练分布门控（观测尺度远超训练集 → 别问了，直接升级） ----
+
+_CALIB = {"train_stats": {"elements_p50": 14, "elements_p95": 20, "elements_max": 25}}
+
+
+def test_ood_check_within_distribution():
+    assert jev_bridge.ood_check(14, _CALIB) is None
+    assert jev_bridge.ood_check(25, _CALIB) is None      # 训练集最大值仍算分布内
+    assert jev_bridge.ood_check(20, _CALIB) is None      # 长尾也交给置信度头，不重复收税
+
+
+def test_ood_check_out_of_distribution():
+    """真实桌面常见 80+ 元素 → 判定分布外，省掉一次必然被推翻的前向。"""
+    reason = jev_bridge.ood_check(84, _CALIB)
+    assert reason and "超出训练分布" in reason and "84" in reason
+
+
+def test_ood_check_without_stats():
+    """旧 ckpt 没落盘训练统计 → 不做门控（行为回退到只看置信度）。"""
+    assert jev_bridge.ood_check(999, {}) is None
+    assert jev_bridge.ood_check(999, {"train_stats": {}}) is None
+    assert jev_bridge.ood_check(999, None) is None
+
+
 # ---- 引擎懒加载降级 ----
 
 def test_load_engine_degrades_when_engine_raises(monkeypatch):

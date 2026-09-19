@@ -57,6 +57,28 @@ DEFAULT_WAIT_SECONDS = 1.0
 _ELEMENT_ACTIONS = ("click_id", "double_click", "right_click")
 
 
+def ood_check(n_elements: int, calib: dict | None) -> str | None:
+    """观测是否超出训练分布（超出 → 返回原因文本，调用方直接升级慢层）。
+
+    2026-09-19 real-domain 实测：mock 训练集元素数中位 14 / p95 ~25，而真实桌面
+    中位 84（最大 107），token 中位 2380 vs 525 —— 在这类观测上 Jev 的 joint_acc
+    从 0.79 掉到 0.15、升级率 90%。既然它必然升级，就别花那 0.45s 去问它；
+    "只在自己见过的尺度上做决策" 也是置信度诚实性的一部分。
+
+    calib 里没有训练分布统计（旧 ckpt）时不做门控。
+    阈值取训练集的**最大值**（不是 p95）：只有训练时真没见过的观测尺度才拦，
+    分布内的长尾仍交给置信度头判断，不重复收税。
+    """
+    if not calib:
+        return None
+    stats = calib.get("train_stats") or {}
+    limit = stats.get("elements_max")
+    if limit and n_elements > limit:
+        return (f"观测超出训练分布：元素数 {n_elements} > 训练集最大值 {int(limit)}"
+                f"（真实桌面常见 80+，mock 训练集中位 {int(stats.get('elements_p50', 0))}）")
+    return None
+
+
 def to_action(decision: dict) -> dict | None:
     """JevDecision → VisualLoop 动作 dict。
 

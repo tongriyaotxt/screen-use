@@ -28,6 +28,7 @@ import torch
 from training.common import OPS, serialize_observation
 from training.dataset import build_tokenizer, MAX_LEN
 from training.model import JevModel
+from screen_use import jev_bridge
 
 _GOAL_TAG = "<|goal|>"
 # 需要元素却选中 no-element 槽 → 明显不自信（压低置信交给升级协议）
@@ -64,6 +65,17 @@ class JevDecision:
     def decide(self, goal: str, foreground: str, elements: list[dict],
                history: list[str]) -> dict:
         t0 = time.perf_counter()
+
+        # 训练分布门控：观测尺度远超训练集时直接升级，不花这一次前向
+        # （实测真实桌面 90% 会升级，白问一次要 0.45s）
+        ood = jev_bridge.ood_check(len(elements), self.calib)
+        if ood:
+            return {
+                "action": "OOD", "element_id": None, "text": None,
+                "confidence": 0.0, "confidence_raw": 0.0, "escalate": True,
+                "detail": ood, "latency_ms": (time.perf_counter() - t0) * 1000,
+            }
+
         text = serialize_observation(goal, foreground, elements, history)
         enc = self.tok(text, truncation=True, max_length=MAX_LEN,
                        return_offsets_mapping=True)
