@@ -62,6 +62,13 @@ def iter_samples(dirs: list[Path]) -> list[dict]:
             if op is None:
                 history.append(f"[决策失败 ✗]")
                 continue
+            if not s.get("ok", True):
+                # 执行失败的步不进训练集（本函数 docstring 一直这么写，但代码漏了判断）。
+                # 2026-09-19 实测代价：v3 有 14/290 步是「oracle 目标不可见」的失败点击，
+                # args 为空 → elem_slot 落到 no-element 槽，等于教模型
+                # 「看到这个 goal 就点空气」。失败动作仍写进 history，后续步的历史才忠实。
+                history.append(_hist_entry(op, s, ok=False))
+                continue
             elements = s.get("elements", [])[:MAX_ELEMENTS_PER_SAMPLE]
             args = s.get("args", {})
 
