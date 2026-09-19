@@ -17,7 +17,8 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
-| 09-19 | **v3 流水线开跑**（1000 回合 / 2 epoch，idle-gate 60s，你离开电脑才动） | `scripts/run_pipeline.py`、`assets/bench/logs/pipeline_20260919-1340.log` |
+| 09-19 | **修窗口卡死事故**（owner 报障「哪个 mock 卡住了显示未响应」）：确认框是 QDialog 且**故意与主窗口同标题**，有些范式流程结束时把它留在打开状态，而 `win.close()` 只隐藏主窗口、关不掉独立顶层窗口 → 那个框赖在 owner 屏幕上，生成器进 idle-gate 阻塞事件循环后被 Windows 标成「(未响应)」。现 `MockWindow.teardown()` 按层收（弹层→确认框→本体）+ 回合边界 `sweep_stale_windows()` 兜底；进闸门前必清场 | `scripts/mock_env.py`、`scripts/mock_v3.py`、`tests/test_mock_windows.py`（+4 测试） |
+| 09-19 | **v3 流水线开跑**（1000 回合 / 2 epoch，idle-gate 60s，你离开电脑才动） | `scripts/run_pipeline.py`、`assets/bench/logs/pipeline_*.log` |
 | 09-19 | **修流水线评测域**：第 5 步 mock 基准漏传 `--data` → 会拿 v2（14 元素）考 v3（90 元素）模型，低分会被误读成"训练搞坏了" | `scripts/run_pipeline.py` |
 | 09-19 | **修校准小样本崩溃**：哈希分半可能把留出文件全分到一侧 → `torch.cat([])` 报错看不懂；现按文件整体挪一个 + 明确错误信息 | `training/calibrate.py`、`tests/test_calibrate.py`（+6 测试） |
 | 09-19 | **图标无文字分布对齐**：真实 11% 元素无名 → v3 掺无名图标按钮 + 无重名保护 | `scripts/mock_v3.py`、`tests/test_mock_v3.py`、BENCH.md §8.7/8.8 |

@@ -486,16 +486,24 @@ def main() -> None:
                                           args.bilingual_prob)
         if ep < args.start:
             continue  # 保持 rng 消费一致
+        # 进闸门前清场：gate 里 sleep 会阻塞 Qt 事件循环，此时屏幕上**绝不允许**
+        # 有 mock 窗口（否则 Windows 会把它标成「(未响应)」挂在 owner 桌面上）
+        swept = mock_env.sweep_stale_windows()
+        if swept:
+            print(f"[janitor] 进闸门前清掉 {swept} 个残留 mock 窗口", flush=True)
         _wait_for_user_to_leave(args.idle_gate_s, ep)
         episode_id = f"mock-v3-{args.seed}-{ep:04d}"
         win = mock_env.MockWindow(rng, episode_id, spec)
-        win.show()
-        app.processEvents()
-        time.sleep(0.4)
-        stats = runner.run(win, goal, steps, episode_id)
-        total["elements"].append(len(runner._observe(episode_id)))
-        win.close()
-        app.processEvents()
+        try:
+            win.show()
+            app.processEvents()
+            time.sleep(0.4)
+            stats = runner.run(win, goal, steps, episode_id)
+            total["elements"].append(len(runner._observe(episode_id)))
+        finally:
+            # 确认框/弹层随窗口一起收（2026-09-19 卡死事故，见 MockWindow.teardown）
+            win.teardown()
+            app.processEvents()
         total["episodes"] += 1
         total["steps"] += stats["steps"]
         total["ok"] += stats["ok"]

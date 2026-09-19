@@ -27,7 +27,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLineEdit, QListWidget, QListWidgetItem,
     QCheckBox, QRadioButton, QComboBox, QTabWidget, QLabel, QStackedWidget,
-    QMessageBox,
+    QMessageBox, QDialog,
 )
 
 from screen_use.memory import _default_home
@@ -219,7 +219,6 @@ class MockWindow(QWidget):
             trigger, dialog_btns = spec["dialog_on_click"]
             if trigger in self.buttons:
                 def show_dialog():
-                    from PySide6.QtWidgets import QDialog, QLabel
                     dlg = QDialog(self)
                     dlg.setWindowTitle(self.windowTitle())  # 同标题 → 观测按 tag 捕获
                     dlg.setGeometry(self.x() + 60, self.y() + 80, 300, 120)
@@ -231,6 +230,60 @@ class MockWindow(QWidget):
                     dlg.setAttribute(Qt.WA_ShowWithoutActivating, True)
                     dlg.show()
                 self.buttons[trigger].clicked.connect(show_dialog)
+
+    def teardown(self) -> None:
+        """收摊：弹层 → 确认框 → 窗口本体，全部显式关掉并销毁。
+
+        2026-09-19 事故（v3 量产第 49 回合）：确认框是 QDialog，而且**故意与主窗口
+        同标题**（观测按标题 tag 捕获弹窗里的控件）。`_close_popups` 只管下拉/菜单、
+        不问对话框；有些范式的 oracle 流程最后一步就把确认框留在打开状态；而
+        `win.close()` 只隐藏主窗口——对话框是**独立顶层窗口**，照样赖在屏幕上。
+        生成器在 idle-gate 里 sleep 时又阻塞 Qt 事件循环，Windows 于是把它标成
+        「(未响应)」挂在 owner 桌面上（owner 报障原文：哪个 mock 卡住了）。
+        这里按层收干净，不再依赖 GC（PySide6 父子引用成环，回收时机不可控）。
+        """
+        try:
+            if self.combo is not None and self.combo.view().isVisible():
+                self.combo.hidePopup()
+        except Exception:
+            pass
+        for m in getattr(self, "menus", {}).values():
+            try:
+                m.close()
+            except Exception:
+                pass
+        for dlg in self.findChildren(QDialog):
+            try:
+                dlg.close()
+                dlg.deleteLater()
+            except Exception:
+                pass
+        self.close()
+        self.deleteLater()
+
+
+def sweep_stale_windows(keep: QWidget | None = None) -> int:
+    """扫掉残留的 mock 顶层窗口（主窗 + 确认框），返回清理个数。兜底防线。
+
+    标题前缀判断对确认框同样有效（它故意与主窗口同标题），所以能一网打尽。
+    **只能在回合边界调用**：回合进行中弹窗还活着，此时调用会把正在用的确认框误杀。
+    """
+    n = 0
+    for w in QApplication.topLevelWidgets():
+        if w is keep or not w.isVisible():
+            continue
+        if not (isinstance(w, MockWindow) or w.windowTitle().startswith("MockUI")):
+            continue
+        try:
+            if isinstance(w, MockWindow):
+                w.teardown()
+            else:
+                w.close()
+                w.deleteLater()
+            n += 1
+        except Exception:
+            pass
+    return n
 
 
 # ==================== 任务模板（语义+顺序） ====================
@@ -684,12 +737,15 @@ def main() -> None:
         if ep < args.start:
             continue  # 保持 rng 消费一致，跳过已完成的 episode
         win = MockWindow(rng, episode_id, spec)
-        win.show()
-        app.processEvents()
-        time.sleep(0.5)
-        stats = runner.run(win, goal, steps, episode_id)
-        win.close()
-        app.processEvents()
+        try:
+            win.show()
+            app.processEvents()
+            time.sleep(0.5)
+            stats = runner.run(win, goal, steps, episode_id)
+        finally:
+            # 确认框/弹层随窗口一起收（2026-09-19 卡死事故，见 MockWindow.teardown）
+            win.teardown()
+            app.processEvents()
         total["episodes"] += 1
         total["steps"] += stats["steps"]
         total["ok"] += stats["ok"]
