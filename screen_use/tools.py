@@ -168,20 +168,23 @@ class ScreenUse:
             comtypes.CoUninitialize()
 
     def list_ui_elements_raw(self, budget_ms: int | None = None,
-                             force_full: bool = False) -> list[UIElement]:
+                             force_full: bool = False,
+                             max_elements: int | None = None) -> list[UIElement]:
         """枚举可交互元素（可选时间预算 + 后台窗口缓存）。
 
         预算把元素表清空时兜底不限时重来一次——宁可慢，不可瞎。
         force_full=True 时忽略缓存、全部窗口重走（UI 大变动后要新鲜数据）。
+        max_elements 调大 → 每个窗口的配额按比例放大（合成环境里目标窗口是后台窗口时用，
+        否则它的控件会被配额切掉）。
         """
         if budget_ms is None:
             budget_ms = int(getattr(self.settings, "uia_budget_ms", 0) or 0)
         ttl = float(getattr(self.settings, "uia_window_cache_ttl_s", 0.0) or 0.0)
         result = uia_tree.list_ui_elements(budget_ms=budget_ms, force_full=force_full,
-                                            cache_ttl_s=ttl)
+                                            cache_ttl_s=ttl, max_elements=max_elements)
         if not result and budget_ms:
             result = uia_tree.list_ui_elements(budget_ms=0, force_full=force_full,
-                                               cache_ttl_s=ttl)
+                                               cache_ttl_s=ttl, max_elements=max_elements)
         self._foreground_title = getattr(result, "foreground_title", "")
         self._elements = list(result)
         return self._elements
@@ -210,12 +213,14 @@ class ScreenUse:
         """最近一次枚举的元素（带 UIA 控件对象），供 screenshot(elements=...) 复用。"""
         return self._elements
 
-    def list_ui_elements(self) -> dict:
+    def list_ui_elements(self, max_elements: int | None = None) -> dict:
         """枚举前台窗口的可交互控件（名称、类型、坐标）。零模型依赖。
 
         返回 {"foreground_title": 前台窗口标题, "elements": [...]}。
+        max_elements 见 list_ui_elements_raw（合成环境调大配额用）。
         """
-        elements = [el.to_dict() for el in self.list_ui_elements_raw()]
+        elements = [el.to_dict()
+                    for el in self.list_ui_elements_raw(max_elements=max_elements)]
         return {"foreground_title": self._foreground_title, "elements": elements}
 
     def click(self, x: int, y: int) -> dict:

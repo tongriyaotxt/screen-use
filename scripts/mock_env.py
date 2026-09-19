@@ -33,6 +33,9 @@ from PySide6.QtWidgets import (
 from screen_use.memory import _default_home
 from screen_use.tools import ScreenUse
 
+# 落盘轨迹的元素上限：与训练侧 MAX_ELEMENTS_PER_SAMPLE 对齐（超了标签会被静默截断）
+MAX_TRACE_ELEMENTS = 150
+
 # ==================== 语料池 ====================
 
 BTN_ACTIONS = ["提交", "确定", "保存", "搜索", "下一步", "完成", "导出", "刷新", "发送", "登录"]
@@ -74,11 +77,16 @@ class MockWindow(QWidget):
         # 保留键盘焦点能力，否则下拉弹层/菜单弹层会因无焦点瞬关）。
         # 注意 Qt 坐标是逻辑像素（本机 1280×800），放物理坐标会把窗口甩出屏幕外。
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        # 置顶：被别的窗口盖住的控件 UIA 会报 offscreen → 元素表里直接消失，
+        # oracle 就找不到目标（2026-09-19 实测：窗口放左上角被终端盖住，44 个元素里
+        # 一个 mock 自己的控件都没有）。置顶不抢焦点，配合 idle-gate 只在人离开时出现。
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         # 窗口尺寸可由 spec 指定（mock v3 用大窗口装 40–120 个控件，对齐真实应用尺度）。
-        # 大窗口贴左上角，小窗口仍放右下角角落（owner 在机时的零干扰布局）。
+        # 大窗口贴上方固定 y：屏幕只有 800 高，放到 y=80 会把下半截顶出屏幕，
+        # 那些控件被判 offscreen → UIA 看不到 → oracle 找不到目标（2026-09-19 踩过）。
         w, h = spec.get("size", (460, 340))
         if w > 700 or h > 500:
-            self.setGeometry(rng.randint(10, 80), rng.randint(10, 60), w, h)
+            self.setGeometry(rng.randint(20, 60), 20, w, h)
         else:
             self.setGeometry(rng.randint(820, 1000), rng.randint(450, 620), w, h)
 
@@ -188,6 +196,8 @@ class MockWindow(QWidget):
                 for c in children:
                     p.addChild(QTreeWidgetItem([c]))
                 tw.addTopLevelItem(p)
+            if spec.get("expand_tree"):
+                tw.expandAll()   # v3：展开才有足够多「可见」元素（折叠时子节点 UIA 看不到）
 
         # 表格
         if spec.get("table"):
@@ -482,8 +492,14 @@ class EpisodeRunner:
         """观测 = mock 窗口元素 + 落在窗口矩形内的全局元素（下拉弹窗/浮层）。
 
         下拉框弹出层是独立窗口（窗口矩形近似由 mock 元素的 bbox 并集给出，
-        下缘留 margin 覆盖向下弹出的列表）——与 VLM 实际看到的画面一致。"""
-        data = self.tools.list_ui_elements()
+        下缘留 margin 覆盖向下弹出的列表）——与 VLM 实际看到的画面一致。
+
+        配额：mock 窗口不是前台窗口，默认 150 的总配额只给它 ~25 个名额，85 个控件会被
+        切掉一大半、oracle 找不到目标（2026-09-19 实测）。所以这里放大到 600 →
+        每个窗口配额 ~100，mock 自己的控件保得住；再按 MAX_ELEMENTS_PER_SAMPLE 截断，
+        保证落盘轨迹与训练侧（150 上限）一致。
+        """
+        data = self.tools.list_ui_elements(max_elements=600)
         tag = f"MockUI-{episode_id}"
         own = [e for e in data["elements"] if tag in e["window_title"]]
         if own:
@@ -495,7 +511,8 @@ class EpisodeRunner:
                      if tag not in e["window_title"]
                      and left <= e["center"][0] <= right
                      and top <= e["center"][1] <= bottom]
-            own.extend(extra)
+            own.extend(extra[:40])   # 别让别的窗口的控件挤掉 mock 自己的
+        own = own[:MAX_TRACE_ELEMENTS]
         for i, e in enumerate(own, 1):
             e["_gid"] = e["id"]
             e["id"] = i

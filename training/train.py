@@ -59,6 +59,23 @@ def evaluate(model, loader, device) -> dict:
             "joint_acc": joint_ok / max(n, 1), "brier": brier / max(n, 1)}
 
 
+def _pause_while_user_active(idle_s: float) -> None:
+    """人在用电脑就暂停训练（owner：可以跑，但别影响正常使用）。
+
+    每个优化步检查一次；暂停期间的日志会在恢复时补一行，便于事后看训练是不是被让路了。
+    """
+    from screen_use.winidle import user_idle_seconds
+
+    if user_idle_seconds() >= idle_s:
+        return
+    t0 = time.time()
+    print(f"[idle-gate] 检测到用户在用电脑，训练暂停……", flush=True)
+    while user_idle_seconds() < idle_s:
+        time.sleep(10)
+    print(f"[idle-gate] 用户离开 {idle_s:.0f}s，继续训练"
+          f"（本次让路 {time.time() - t0:.0f}s）", flush=True)
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--data", action="append", required=True,
@@ -70,6 +87,11 @@ def main() -> None:
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--out", default="checkpoints")
     p.add_argument("--max-samples", type=int, default=0, help="调试用：限制样本数")
+    p.add_argument("--idle-gate-s", type=float, default=0.0,
+                   help="用户空闲满这么多秒才继续训练（人在用就暂停；0=不设闸门）。"
+                        "owner 要求「可以跑但别影响我用电脑」时用它")
+    p.add_argument("--throttle-ms", type=int, default=0,
+                   help="每个优化步后 sleep 这么多毫秒（给 GPU 让路，默认 0）")
     args = p.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -121,6 +143,10 @@ def main() -> None:
                 scheduler.step()
                 optimizer.zero_grad()
                 step += 1
+                if args.idle_gate_s:
+                    _pause_while_user_active(args.idle_gate_s)
+                if args.throttle_ms:
+                    time.sleep(args.throttle_ms / 1000)
                 if step % 10 == 0:
                     print(f"e{epoch} s{step}/{total_steps} loss={loss.item():.3f} "
                           f"op={metrics['acc_op']:.2f} joint={metrics['acc_joint']:.2f}",

@@ -243,7 +243,7 @@ def _screen_size() -> tuple[int, int]:
     return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
 
 
-def list_ui_elements(max_elements: int = MAX_ELEMENTS,
+def list_ui_elements(max_elements: int | None = MAX_ELEMENTS,
                      max_windows: int = MAX_WINDOWS,
                      max_visited: int = MAX_VISITED,
                      budget_ms: int | None = None,
@@ -258,6 +258,8 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
 
     budget_ms: 枚举**总**时间预算（0/None 用 DEFAULT_BUDGET_MS）。前台窗口永不限时，
     其余窗口按学到的成本从便宜到贵走，超预算即停（已收集的元素保留，元素表可能变短）。
+    max_elements: 元素总数上限；各窗口配额按它等比放大（合成环境里目标窗口不是前台时，
+    默认 150 会让它只拿到 ~25 个名额，控件被切掉 → oracle 找不到目标）。
     force_full: 忽略缓存，全部窗口重走（UI 大变动后要求新鲜数据时用）。
     cache_ttl_s: 后台窗口元素表缓存有效期（秒，0=禁用；None 用 WINDOW_CACHE_TTL_S）。
     实测拆分见 `el.timings`。并行遍历试过（2026-09-19）：本机无收益（UIA 跨进程调用
@@ -269,6 +271,8 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS,
 
     from screen_use.perception.screen import ensure_dpi_aware
 
+    if max_elements is None:
+        max_elements = MAX_ELEMENTS
     if budget_ms is None:
         budget_ms = DEFAULT_BUDGET_MS
     if cache_ttl_s is None:

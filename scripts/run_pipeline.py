@@ -42,10 +42,16 @@ def run_step(name: str, argv: list[str], log, dry: bool = False) -> int:
         print("(dry-run：跳过)", flush=True)
         return 0
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+    # 让路优先：子进程降为 BelowNormal（CPU 侧不跟用户的应用抢），并抑制控制台闪窗
+    flags = 0
+    if os.name == "nt":
+        flags = (getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
+                 | getattr(subprocess, "CREATE_NO_WINDOW", 0))
     t0 = time.time()
     proc = subprocess.Popen(argv, cwd=str(ROOT), env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, encoding="utf-8", errors="replace")
+                            text=True, encoding="utf-8", errors="replace",
+                            creationflags=flags)
     for line in proc.stdout:
         print(line, end="", flush=True)
         log.write(line)
@@ -119,6 +125,10 @@ def main() -> None:
                    help="只走一遍控制流、不真跑子进程（校验参数拼接与报告，可随时用）")
     p.add_argument("--allow-no-v3", action="store_true",
                    help="v3 数据为空时也继续（默认中止：分布对齐是本流水线的目的）")
+    p.add_argument("--idle-gate-s", type=float, default=45.0,
+                   help="用户空闲满这么多秒才继续（人在用就自动暂停；0=不设闸门）")
+    p.add_argument("--throttle-ms", type=int, default=50,
+                   help="训练每个优化步让路这么多毫秒（配合 idle-gate）")
     p.add_argument("--eval-episodes", type=int, default=60)
     args = p.parse_args()
 
@@ -161,7 +171,8 @@ def _pipeline(args, log, report: list, stamp: str, v3_dir: Path) -> None:
                 f"mock v3 量产（{have + 1} → {args.episodes}）",
                 [PY, str(ROOT / "scripts" / "mock_v3.py"),
                  "--episodes", str(args.episodes), "--seed", str(args.seed),
-                 "--start", str(have + 1)],
+                 "--start", str(have + 1),
+                 "--idle-gate-s", str(args.idle_gate_s)],
                 log, dry=args.dry_run)
             report.append(("mock v3 量产", "成功" if code == 0 else f"失败({code})"))
             if code != 0:
@@ -189,7 +200,9 @@ def _pipeline(args, log, report: list, stamp: str, v3_dir: Path) -> None:
         code = run_step(
             f"训练（{args.base}，{args.epochs} epoch）",
             [PY, "-m", "training.train", *data_args, "--base", args.base,
-             "--epochs", str(args.epochs), "--out", args.ckpt_out],
+             "--epochs", str(args.epochs), "--out", args.ckpt_out,
+             "--idle-gate-s", str(args.idle_gate_s),
+             "--throttle-ms", str(args.throttle_ms)],
             log, dry=args.dry_run)
         report.append(("训练", "成功" if code == 0 else f"失败({code})"))
         if code != 0:

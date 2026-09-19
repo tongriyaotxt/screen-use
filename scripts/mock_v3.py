@@ -102,16 +102,18 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
     size = max(20, min(200, target_elements))
     big = size >= 70
     mid = size >= 40
-    if big:
-        spec.update({"size": (1000, 780), "menu_pos": (0, 0, 1000, 28),
-                     "tree_pos": (10, 40, 220, 200), "list_pos": (240, 40, 220, 200),
-                     "table_pos": (470, 40, 500, 210), "field_y0": 260,
-                     "button_pos": (20, 0), "button_cols": 5})
-    elif mid:
-        spec.update({"size": (900, 700), "menu_pos": (0, 0, 900, 28),
-                     "tree_pos": (10, 40, 220, 190), "list_pos": (240, 40, 220, 190),
-                     "table_pos": (470, 40, 410, 200), "field_y0": 240,
-                     "button_pos": (20, 0), "button_cols": 4})
+
+    # 布局按「屏幕像素预算」排：元素数受可见面积限制（每个控件要占几十像素）。
+    # 屏幕 1280×800，窗口 860×640 @ y=20 正好装下：面板 40–270 / 输入 280–420 /
+    # 勾选单选 420–580 / 按钮 590–635。子节点必须展开（折叠的 UIA 看不到）。
+    if big or mid:
+        spec.update({
+            "size": (860, 640), "menu_pos": (0, 0, 860, 28),
+            "tree_pos": (700, 40, 150, 230), "list_pos": (520, 40, 170, 230),
+            "table_pos": (10, 40, 500, 230), "field_y0": 280,
+            "combo_pos": (700, 285, 140, 30),
+            "button_pos": (10, 0), "button_cols": 6, "expand_tree": True,
+        })
 
     def est() -> int:
         return estimate_elements(spec)
@@ -400,6 +402,21 @@ def scale_report(specs: list[tuple[dict, str]], ckpt: str = "") -> dict:
     }
 
 
+def _wait_for_user_to_leave(idle_s: float, ep: int) -> None:
+    """owner 在用电脑就等（"可以跑，但别影响我正常使用"）——开窗前必过这道闸门。"""
+    if not idle_s:
+        return
+    from screen_use.winidle import user_idle_seconds, wait_for_idle
+
+    if user_idle_seconds() >= idle_s:
+        return
+    print(f"[idle-gate] 检测到用户在用电脑，量产暂停（第 {ep} 回合前）……", flush=True)
+    t0 = time.time()
+    waited = wait_for_idle(idle_s, poll_s=5.0)
+    print(f"[idle-gate] 用户空闲 {waited + idle_s:.0f}s，继续量产"
+          f"（本回合等了 {time.time() - t0:.0f}s）", flush=True)
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser()
@@ -412,6 +429,8 @@ def main() -> None:
     parser.add_argument("--out", default="", help="默认 ~/.screen_use/traces_mock_v3")
     parser.add_argument("--estimate-only", action="store_true",
                         help="不开窗：只报观测尺度（元素/token）并与真实/v2 对照")
+    parser.add_argument("--idle-gate-s", type=float, default=45.0,
+                        help="用户空闲满这么多秒才继续量产（人在用就暂停；0=不设闸门）")
     parser.add_argument("--ckpt", default="checkpoints/jev-Qwen3-0.6B-e3",
                         help="算 token 用的 tokenizer 来源（--estimate-only）")
     args = parser.parse_args()
@@ -441,6 +460,7 @@ def main() -> None:
                                           args.bilingual_prob)
         if ep < args.start:
             continue  # 保持 rng 消费一致
+        _wait_for_user_to_leave(args.idle_gate_s, ep)
         episode_id = f"mock-v3-{args.seed}-{ep:04d}"
         win = mock_env.MockWindow(rng, episode_id, spec)
         win.show()
