@@ -1,0 +1,2786 @@
+{
+ "meta": {
+  "ts": "2026-09-19 18:58:34",
+  "ckpt": "D:\\项目\\01_AI与AGI研发\\RPA-2.0\\checkpoints\\v3\\jev-Qwen3-0.6B-e2",
+  "mock_dir": "C:\\Users\\fude-\\.screen_use\\traces_mock_v3",
+  "episodes": 60,
+  "vlm_episodes": 0,
+  "limit_steps": 5,
+  "vlm_model": "",
+  "tau": 0.5,
+  "calibrated": true
+ },
+ "jev": {
+  "steps": 162,
+  "steps_in_action_set": 162,
+  "steps_out_of_action_set": 0,
+  "op_acc": 1.0,
+  "joint_acc": 0.6235,
+  "elem_acc": 0.6235,
+  "type_text_acc": 1.0,
+  "escalation_rate": 0.537,
+  "coverage": 0.46299999999999997,
+  "blocked_hit": 0,
+  "blocked_false": 0,
+  "errors": 0,
+  "latency_ms": {
+   "mean": 533.6,
+   "p50": 534.0,
+   "p95": 576.9,
+   "max": 1257.7,
+   "n": 162
+  }
+ },
+ "vlm": null,
+ "e2e": {
+  "episodes": 0,
+  "rows": [],
+  "vlm_pure_ms_per_task": 0.0,
+  "jev_hybrid_ms_per_task": 0.0,
+  "speedup": 0.0,
+  "vlm_calls_per_task_pure": 0.0,
+  "vlm_calls_per_task_hybrid": 0.0,
+  "steps_per_task": 0.0,
+  "act_ms": 180.0,
+  "observe": {
+   "jev_observe_ms": 224.8,
+   "vlm_observe_ms": 214.2,
+   "samples": 3
+  }
+ },
+ "episodes": {
+  "jev": [
+   {
+    "id": "mock-v3-7-0001",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 1257.731599995168,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 486.80109999259,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0027",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 321.6677000018535,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 470.9459000005154,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0052",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 341.6544000065187,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 494.90140000125393,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0077",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 342.15329999278765,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 498.42550000175834,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0103",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 333.98580001085065,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 468.88910001143813,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0122",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 480.5424999940442,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 479.60509998665657,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 513.9308000070741,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0134",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 512.0282999996562,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 516.8310000008205,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 522.8555999929085,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 522.4191000015708,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 530.5710999964504,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0151",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 496.16040001274087,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 495.0408000004245,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0163",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 521.0239000007277,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 528.4722999931546,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 528.7162000022363,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 539.125299997977,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0180",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 527.069500007201,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 527.2406000003684,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 537.3540000000503,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0197",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 530.8886999991955,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 522.8793999995105,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 543.8894000108121,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0209",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 516.0265000013169,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 516.3488999969559,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 518.2912000018405,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 515.8056000072975,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 519.3703999975696,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0226",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 507.0738999929745,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 507.1730000054231,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0239",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 513.5607999982312,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 519.871399999829,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0256",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 527.3224999982631,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 524.9481000064407,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 517.3281999886967,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 529.3881000106921,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0273",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 518.1558000040241,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 526.3303999963682,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0285",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 504.76999999955297,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 406.30469999450725,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 498.017499994603,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0302",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.6666666865348816,
+      "ms": 545.3784999990603,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 530.5278000014368,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0314",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 545.3874999948312,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 543.4582000016235,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0331",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 528.8190000137547,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 538.4057000046596,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 548.8847000087844,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 549.7838999872329,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0348",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 520.8644999947865,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 543.1417999934638,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0360",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 545.8074000052875,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 268.647000004421,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 539.9737999978242,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0376",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 528.2068999949843,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 524.0046999970218,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0388",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 554.7707000077935,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 546.2298999918858,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 576.9311999902129,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 584.6955000015441,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0405",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 548.285400000168,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 549.5047000003979,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 543.562999999267,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0427",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 361.84070000308566,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 522.184000001289,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0448",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 533.0717000033474,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 540.8572000014829,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0462",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 517.8069999965373,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 518.5768000083044,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0478",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.6666666865348816,
+      "ms": 546.1703999899328,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 535.8916000113823,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0490",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 547.7015000069514,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 541.8336000002455,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0508",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 521.3793000002624,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 534.0170999988914,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 531.5781999961473,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 532.5292999914382,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 540.9439000068232,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0525",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 504.67870000284165,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 555.9451000008266,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 530.8427999989362,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0537",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 511.5593000082299,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 511.29799999762326,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0554",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 537.6263000071049,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 533.8698999985354,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 545.3276000043843,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0571",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 516.7239000002155,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 516.8264999956591,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 522.8768999950262,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0583",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 547.2139000048628,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 556.4555000019027,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 550.499499993748,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 550.3600999945775,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 548.7218999915058,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0599",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.6666666865348816,
+      "ms": 552.8689000057057,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 722.8154999902472,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 554.6767999912845,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0611",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 524.3971000018064,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 515.4710999922827,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0628",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 559.5362000021851,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 570.9033000021009,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0640",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 525.1619000046048,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 529.5509999996284,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0657",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 538.217799999984,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 524.773400000413,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 552.0082000002731,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 564.997300010873,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0674",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 521.0483999981079,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 556.0583999904338,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 527.2459000116214,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0686",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 550.8007000025827,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 554.758900005254,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0703",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 544.9522999988403,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 544.0857999928994,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0715",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 530.3064000036102,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 523.407300002873,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0732",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 554.4673999975203,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 562.9354999982752,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 598.8839999918127,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 565.021300004446,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0748",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 544.4071000092663,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 537.7679000084754,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0761",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 570.4421999980696,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 567.5981999957003,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0778",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 521.2744000018574,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 515.6235000031302,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0790",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.6666666865348816,
+      "ms": 549.0992999984883,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 539.2139999894425,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0807",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 550.197799995658,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 562.642799995956,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 563.6689999955706,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 567.9858999938006,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0824",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 537.9708999971626,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 599.0514000004623,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 569.7823999944376,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0836",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.23076923191547394,
+      "ms": 551.056599986623,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 544.4691999873612,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0853",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 545.8317999873543,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 546.7112999904202,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0865",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.6666666865348816,
+      "ms": 567.7144000073895,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 579.7883000050206,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0882",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 579.8958999948809,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "TYPE",
+      "pred": "TYPE",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 567.2098999930313,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 544.6482999977889,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 562.7571000077296,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0899",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 0.8675046094393062,
+      "ms": 567.9764999949839,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 616.5331000083825,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 564.1971999866655,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0911",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 547.3198999970919,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 564.1852999979164,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0928",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 529.9062999984017,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 526.540599996224,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   },
+   {
+    "id": "mock-v3-7-0946",
+    "recs": [
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 547.7721999923233,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "CLICK",
+      "pred": "CLICK",
+      "escalate": true,
+      "op_ok": true,
+      "elem_ok": false,
+      "text_ok": true,
+      "joint_ok": false,
+      "conf": 0.23076923191547394,
+      "ms": 545.0542000035057,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     },
+     {
+      "expected": "DONE",
+      "pred": "DONE",
+      "escalate": false,
+      "op_ok": true,
+      "elem_ok": true,
+      "text_ok": true,
+      "joint_ok": true,
+      "conf": 1.0,
+      "ms": 532.3988000018289,
+      "error": null,
+      "in_action_set": true,
+      "blocked_hit": false,
+      "blocked_false": false
+     }
+    ]
+   }
+  ],
+  "vlm": []
+ }
+}

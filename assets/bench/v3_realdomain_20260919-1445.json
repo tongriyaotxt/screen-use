@@ -1,0 +1,53 @@
+{
+ "ckpt": "D:\\项目\\01_AI与AGI研发\\RPA-2.0\\checkpoints\\v3\\jev-Qwen3-0.6B-e2",
+ "data": [
+  "C:\\Users\\fude-\\.screen_use\\traces_full"
+ ],
+ "samples": 72,
+ "slices": [
+  {
+   "seed": 0,
+   "n": 20,
+   "op_acc": 0.6,
+   "joint_acc": 0.0,
+   "ece_before": 0.4701,
+   "t_op": 3.2,
+   "t_elem": 0.6
+  },
+  {
+   "seed": 1,
+   "n": 6,
+   "op_acc": 0.6667,
+   "joint_acc": 0.3333,
+   "ece_before": 0.5551,
+   "t_op": 2.2,
+   "t_elem": 1.05
+  }
+ ],
+ "summary": {
+  "n_slices": 2,
+  "op_acc": 0.6333,
+  "op_acc_sd": 0.0471,
+  "joint_acc": 0.1667,
+  "joint_acc_sd": 0.2357,
+  "ece_before": 0.5126
+ },
+ "deployed": {
+  "n": 60,
+  "tau": 0.5,
+  "isotonic": true,
+  "escalation_rate": 0.9833,
+  "coverage": 0.0167,
+  "coverage_by_source": {
+   "vlm_trace": 0.0167
+  },
+  "op_acc": 0.8333,
+  "joint_acc": 0.1167,
+  "latency_ms": {
+   "mean": 1991.1,
+   "p50": 487.5,
+   "p95": 10316.9
+  },
+  "curve": {}
+ }
+}
