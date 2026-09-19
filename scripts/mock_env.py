@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sys
 import time
@@ -596,36 +597,37 @@ class EpisodeRunner:
     def __init__(self, out_dir: Path):
         self.tools = ScreenUse()
         self.out_dir = out_dir
+        self._pid_warned = False
         out_dir.mkdir(parents=True, exist_ok=True)
 
     def _observe(self, episode_id: int) -> list[dict]:
-        """观测 = mock 窗口元素 + 落在窗口矩形内的全局元素（下拉弹窗/浮层）。
+        """观测 = **本进程自己的窗口**元素（主窗 + 下拉弹层 + 确认框）。
 
-        下拉框弹出层是独立窗口（窗口矩形近似由 mock 元素的 bbox 并集给出，
-        下缘留 margin 覆盖向下弹出的列表）——与 VLM 实际看到的画面一致。
+        2026-09-19 事故：以前按"落在窗口矩形内"捞外来元素，而 mock 窗口开在左上角且很大
+        → owner 的终端窗口（标题里就是对话名）以及别的应用的控件被算进观测，
+        实测占 10~30 个，还随桌面状态漂移（同一批回合在 86 与 67 之间跳）。
+        更糟的是它撑起了"元素中位对齐真实 84"的**假象**——mock 窗口自己只有 ~56 个控件。
 
-        配额：mock 窗口不是前台窗口，默认 150 的总配额只给它 ~25 个名额，85 个控件会被
-        切掉一大半、oracle 找不到目标（2026-09-19 实测）。所以这里放大到 600 →
-        每个窗口配额 ~100，mock 自己的控件保得住；再按 MAX_ELEMENTS_PER_SAMPLE 截断，
-        保证落盘轨迹与训练侧（150 上限）一致。
+        改成按**进程号**过滤：下拉弹层、确认框都是本进程的独立顶层窗口，照样进得来；
+        别的应用一律不进。轨迹 schema 不变（pid 用完即删）。
         """
         data = self.tools.list_ui_elements(max_elements=600)
-        tag = f"MockUI-{episode_id}"
-        own = [e for e in data["elements"] if tag in e["window_title"]]
-        if own:
-            left = min(e["bbox"][0] for e in own) - 50
-            top = min(e["bbox"][1] for e in own) - 50
-            right = max(e["bbox"][2] for e in own) + 50
-            bottom = max(e["bbox"][3] for e in own) + 250  # 下拉向下弹出
-            extra = [e for e in data["elements"]
-                     if tag not in e["window_title"]
-                     and left <= e["center"][0] <= right
-                     and top <= e["center"][1] <= bottom]
-            own.extend(extra[:40])   # 别让别的窗口的控件挤掉 mock 自己的
+        me = os.getpid()
+        own = [e for e in data["elements"] if e.get("pid") == me]
+        if not own and data["elements"]:
+            # 兜底：读不到进程号（UIA 属性访问失败）时退回标题匹配——宁可混进外来元素，
+            # 也不要静默产出空观测（空观测会被 mock_v3 的熔断判成"窗口不可见"而中止）。
+            tag = f"MockUI-{episode_id}"
+            own = [e for e in data["elements"] if tag in e.get("window_title", "")]
+            if own and not self._pid_warned:
+                print("[warn] list_ui_elements 没带 pid（ProcessId 读取失败），"
+                      "退回按标题匹配 —— 观测可能混进外来窗口控件", flush=True)
+                self._pid_warned = True
         own = own[:MAX_TRACE_ELEMENTS]
         for i, e in enumerate(own, 1):
             e["_gid"] = e["id"]
             e["id"] = i
+            e.pop("pid", None)   # 轨迹 schema 保持原样
         return own
 
     @staticmethod

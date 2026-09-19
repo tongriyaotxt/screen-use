@@ -98,6 +98,7 @@ class UIElement:
     bbox: tuple[int, int, int, int]
     window_title: str = ""
     window_handle: int = 0
+    pid: int = 0
     extra: dict = field(default_factory=dict)
     control: Any = field(default=None, repr=False, compare=False)  # UIA 控件对象（供文本读写，不序列化）
 
@@ -119,6 +120,7 @@ class UIElement:
             "bbox": list(self.bbox),
             "center": list(self.center),
             "window_title": self.window_title,
+            "pid": self.pid,
         }
 
 
@@ -199,6 +201,15 @@ def _collect_from(root_ctrl, window_title: str, window_handle: int, screen_area:
     """
     elements: list[UIElement] = []
 
+    # 进程号**每个窗口读一次**（不是每个元素一次）：UIA 每次跨进程属性读取
+    # 都可能是一趟 COM 往返，慢 provider 单节点就要 ~4ms（BENCH §6 实测）。
+    # 用途：mock 合成器要判断"这个元素是不是我自己窗口的"
+    # （2026-09-19 事故：观测把 owner 终端窗口的控件也算进了训练数据）。
+    try:
+        window_pid = int(root_ctrl.ProcessId)
+    except Exception:
+        window_pid = 0
+
     def walk(ctrl, depth: int) -> None:
         if visited[0] >= max_visited or depth > MAX_DEPTH:
             return
@@ -223,6 +234,7 @@ def _collect_from(root_ctrl, window_title: str, window_handle: int, screen_area:
                         bbox=bbox,
                         window_title=window_title,
                         window_handle=window_handle,
+                        pid=window_pid,
                         control=ctrl,  # 缓存控件对象，供 get/set_element_text 使用
                     )
                 )

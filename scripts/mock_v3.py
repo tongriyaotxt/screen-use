@@ -37,12 +37,24 @@ from screen_use.memory import _default_home  # noqa: E402
 
 # ==================== 词池 ====================
 
-# 干扰控件：真实应用里大量存在的、跟当前任务无关的东西
+# 干扰控件：真实应用里大量存在的、跟当前任务无关的东西。
+# 2026-09-19 实测 traces_full：**76% 的可见元素是按钮**（67/步，其它类型加起来才 21）。
+# 真实桌面上叠着计算器/终端这类按钮密集的窗口，所以按钮池必须够大——
+# 而且按钮是唯一不受"视口虚拟化"限制的控件（网格排布，全都在视口里），
+# 拿它当达标的主力填充料最稳。
 DISTRACTOR_BUTTONS = [
     "File", "Edit", "View", "Help", "Refresh", "Export CSV", "Import", "Settings",
     "Profile", "Notifications", "Sync", "Filters", "Sort", "Columns", "Zoom In",
     "Zoom Out", "Fullscreen", "Share", "Print Preview", "Duplicate", "Archive",
     "Mark as Read", "Pin", "Collapse All", "Expand All",
+    "Cut", "Copy", "Paste", "Undo", "Redo", "Delete", "Rename", "Move", "Add Row",
+    "Add Column", "Export PDF", "Export Excel", "Publish", "Subscribe", "Like",
+    "Comment", "Reply", "Forward", "Download", "Upload", "Backup", "Restore",
+    "Run", "Debug", "Deploy", "Commit", "Push", "Pull", "Merge", "Terminal",
+    "Extensions", "Format", "Insert", "Chart", "Link", "Footnote", "Header",
+    "Footer", "Page Setup", "Spell Check", "Track Changes", "Reset", "Apply",
+    "Discard", "Next", "Previous", "Finish", "Skip", "Retry", "Cancel All",
+    "New Window", "Split View", "Reload", "Bookmark", "History", "DevTools",
 ]
 
 # 图标按钮：真实桌面 **11% 的元素是无名的**（实测 traces_full，全是 ButtonControl，即 toolbar/
@@ -109,15 +121,17 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
     mid = size >= 40
 
     # 布局按「屏幕像素预算」排：元素数受可见面积限制（每个控件要占几十像素）。
-    # 屏幕 1280×800，窗口 860×640 @ y=20 正好装下：面板 40–270 / 输入 280–420 /
-    # 勾选单选 420–580 / 按钮 590–635。子节点必须展开（折叠的 UIA 看不到）。
+    # 屏幕 1280×800：窗口 1200×740 @ y=20，底边 760 仍在屏内。
+    # 竖直分区：菜单 0–28 / 面板 40–240 / 输入 260–400 / 勾选 400–460 / 按钮网格 460–740。
+    # 按钮网格 9 列 × 8 行 = 72 个位置——真实桌面 76% 的可见元素是按钮，
+    # 之前只留了 3 行（24 个）就再也加不动，才导致窗口永远到不了 85。
     if big or mid:
         spec.update({
-            "size": (860, 700), "menu_pos": (0, 0, 860, 28),
-            "tree_pos": (700, 40, 150, 190), "list_pos": (520, 40, 170, 190),
-            "table_pos": (10, 40, 500, 190), "field_y0": 250,
-            "combo_pos": (700, 255, 140, 30),
-            "button_pos": (10, 0), "button_cols": 8,
+            "size": (1200, 740), "menu_pos": (0, 0, 1200, 28),
+            "tree_pos": (760, 40, 200, 200), "list_pos": (980, 40, 200, 200),
+            "table_pos": (10, 40, 500, 200), "field_y0": 260,
+            "combo_pos": (760, 260, 160, 30),
+            "button_pos": (10, 460), "button_cols": 9,
             "button_size": (90, 26), "button_gap": (10, 8),
             "expand_tree": True,
         })
@@ -161,14 +175,17 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
             menu[name] = have + [i for i in items if i not in have]
         spec["menu"] = menu
 
-    def add_buttons(n: int) -> None:
+    def add_buttons(n: int) -> int:
+        """补按钮，返回实际加了几个（池子空了就加不动）。"""
         if not mid:
-            return
+            return 0
         have = {name for name, _ in spec.get("buttons", [])}
         extra = [b for b in DISTRACTOR_BUTTONS if b not in have]
         rng.shuffle(extra)
-        for name in extra[:max(0, n)]:
+        picked = extra[:max(0, n)]
+        for name in picked:
             spec.setdefault("buttons", []).append((name, True))
+        return len(picked)
 
     def add_icon_buttons(n: int) -> None:
         """无名图标控件：对齐真实桌面 11% 的无名元素比例。
@@ -195,14 +212,23 @@ def densify(spec: dict, rng: random.Random, target_elements: int) -> dict:
     # 无名图标控件先加（它是对齐真实分布的形状，不是填充料——不能被"够了就停"跳过）
     add_icon_buttons(DISTRACTOR_ICONS_PER_EPISODE if big else 4)
 
-    # 按性价比排序逐档加料，够了就停（避免把 84 元素的真实分布做成 120）
+    # 先铺"面板形状"（树/表/菜单/输入）——它们是真实应用的结构骨架
     for step in (lambda: add_tree(4, 4), lambda: add_table(4), lambda: add_menu(2),
-                 lambda: add_buttons(5), lambda: add_fields(1),
-                 lambda: grow_tree(), lambda: add_menu(4), lambda: add_buttons(6),
-                 lambda: grow_table(), lambda: add_fields(2)):
+                 lambda: add_fields(1), lambda: grow_tree(), lambda: grow_table(),
+                 lambda: add_menu(4), lambda: add_fields(2)):
         if est() >= size:
             break
         step()
+
+    # 再用按钮补到目标：真实桌面 76% 的可见元素就是按钮（traces_full 实测 67/步），
+    # 而按钮全在视口内、不受虚拟化影响，是唯一能可靠堆量的类型。
+    # 2026-09-19 之前这里是"每档只走一遍"的阶梯，用虚高的估算器判停 →
+    # 窗口实际只有 ~52 个可见控件，却以为已经有 85 了。
+    for _ in range(40):
+        if est() >= size:
+            break
+        if not add_buttons(4):
+            break   # 池子空了：加不动了，如实停在当前量级
     if not mid:  # 小窗口不做任何加料（保留 v2 那样的干净分布做对照）
         spec.update({"size": (460, 340)})
     return spec
@@ -309,63 +335,122 @@ def semantic_goal(goal: str, steps: list, rng: random.Random, prob: float = 0.7)
 
 
 def synthesize_elements(spec: dict) -> list[dict]:
-    """按 spec 合成「UIA 会看到的」元素表（**离线估算尺度用**，不执行任何动作）。
+    """估算「UIA 会看到的」元素表（**离线尺度验收用**，不执行任何动作）。
 
-    面板内部的行/单元格（树节点、表格单元、列表项、菜单项）在 Qt 里是 model item
-    而不是 QWidget，真实运行时由 UIA 逐个暴露；这里按同样的名字/类型合成出来，
-    bbox 用占位数——只为把「元素数 / token 数」量到真实桌面的量级上做验收，
-    不参与任何轨迹落盘。
+    ⚠️ 2026-09-19 重写。旧版是**纯手算 spec**：把折叠的树节点、未展开的子菜单项、
+    视口外的表格行统统算进去，实测虚报 **+31/回合**（TreeItem +16.2、MenuItem +12.7、
+    DataItem +4.0），而 `densify` 又拿它当"够了，别再加控件"的判据 ——
+    结果窗口里只有 ~56 个可见控件，却对外宣称"元素中位 87 对齐真实 84"（假的对齐）。
+    更糟的是真实观测被 owner 桌面上的别的窗口垫高到 86，把假象坐实了。
+
+    现在改成**建一个不显示的窗口，按 Qt 自己的可见性数一遍**：
+    - 普通控件用 `isVisibleTo(win)` —— 顺手就处理了"非当前 Tab 页不算"这类规则；
+    - 树节点：祖先链全展开才算（UIA 只暴露可见节点）；
+    - 表格/列表：只算视口内的行（Qt 虚拟化，视口外的 UIA 也看不到）；
+    - 菜单栏：只算顶层项（子菜单要展开才进 UIA）；下拉框同理只算它自己。
+    与窗口构建同源，`densify` / 验收 / 实测三者不会再漂移。
     """
-    def el(i, name, ctype, x, y):
-        return {"id": i, "name": name, "control_type": ctype,
-                "bbox": [x, y, x + 120, y + 30], "center": [x + 60, y + 15],
-                "window_title": "MockUI"}
+    win = _build_quiet_window(spec)
+    try:
+        return _uia_visible_elements(win)
+    finally:
+        from PySide6.QtWidgets import QApplication
+        win.close()
+        win.deleteLater()
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+
+
+def _build_quiet_window(spec: dict):
+    """建一个**不显示**的 MockWindow（估算用；rng 固定，保证估算可复现）。"""
+    import mock_env
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication([])
+    return mock_env.MockWindow(random.Random(0), "estimate", spec)
+
+
+def _uia_visible_elements(win) -> list[dict]:
+    """一个已建好（未显示）的窗口 → UIA 会暴露的元素列表（名字/类型/占位 bbox）。"""
+    from PySide6.QtWidgets import (QCheckBox, QComboBox, QLineEdit, QListWidget,
+                                   QMenuBar, QPushButton, QRadioButton, QTableWidget,
+                                   QTreeWidget)
 
     out: list[dict] = []
-    n = 0
-    y = 260
-    for name in spec.get("fields", []):
-        n += 1
-        out.append(el(n, name, "EditControl", 20, y))
-        y += 45
-    for name in spec.get("checks", []):
-        n += 1
-        out.append(el(n, name, "CheckBoxControl", 20, y))
-        y += 32
-    for name in (spec.get("radios") or {}).get("items", []):
-        n += 1
-        out.append(el(n, name, "RadioButtonControl", 250, y))
-    if spec.get("combo"):
-        n += 1
-        out.append(el(n, spec["combo"]["name"], "ComboBoxControl", 500, 260))
-        for item in spec["combo"]["items"]:
-            n += 1
-            out.append(el(n, item, "ListItemControl", 500, y))
-    if spec.get("list"):
-        n += 1
-        out.append(el(n, "项目列表", "ListControl", 240, 40))
-        for item in spec["list"]["items"]:
-            n += 1
-            out.append(el(n, item, "ListItemControl", 240, y))
-    for parent, children in (spec.get("tree") or {}).items():
-        n += 1
-        out.append(el(n, parent, "TreeItemControl", 10, 40))
-        for child in children:
-            n += 1
-            out.append(el(n, child, "TreeItemControl", 30, y))
-    for row in spec.get("table") or []:
-        for cell in row:
-            n += 1
-            out.append(el(n, cell, "DataItemControl", 470, y))
-    for menu, items in (spec.get("menu") or {}).items():
-        n += 1
-        out.append(el(n, menu, "MenuItemControl", 0, 0))
-        for item in items:
-            n += 1
-            out.append(el(n, item, "MenuItemControl", 0, 20))
-    for name, _enabled in spec.get("buttons", []):
-        n += 1
-        out.append(el(n, name, "ButtonControl", 20, y))
+
+    def el(name, ctype, widget=None):
+        bbox = [0, 0, 120, 30]
+        if widget is not None:
+            g = widget.geometry()
+            bbox = [g.left(), g.top(), g.right(), g.bottom()]
+        out.append({"id": len(out) + 1, "name": name, "control_type": ctype,
+                    "bbox": bbox, "center": [(bbox[0] + bbox[2]) // 2,
+                                             (bbox[1] + bbox[3]) // 2],
+                    "window_title": "MockUI"})
+
+    for cls, ctype in ((QPushButton, "ButtonControl"), (QLineEdit, "EditControl"),
+                       (QCheckBox, "CheckBoxControl"), (QRadioButton, "RadioButtonControl")):
+        for w in win.findChildren(cls):
+            if w.isVisibleTo(win):
+                name = w.accessibleName() or (w.text() if hasattr(w, "text") else "")
+                el(name, ctype, w)
+
+    for combo in win.findChildren(QComboBox):
+        if combo.isVisibleTo(win):
+            # 下拉项只在弹出层打开时才进 UIA → 只算它自己
+            el(combo.accessibleName() or "", "ComboBoxControl", combo)
+
+    for tree in win.findChildren(QTreeWidget):
+        if not tree.isVisibleTo(win):
+            continue
+        tree.doItemsLayout()   # 见下方表格处的说明：不布局就算不出视口
+        viewport = tree.viewport().rect()
+
+        def walk(item):
+            # 视口外的节点 Qt 不画、UIA 也不暴露；折叠子树的节点同理
+            if tree.visualItemRect(item).intersects(viewport):
+                el(item.text(0), "TreeItemControl")
+            if item.isExpanded():
+                for i in range(item.childCount()):
+                    walk(item.child(i))
+
+        for i in range(tree.topLevelItemCount()):
+            walk(tree.topLevelItem(i))
+
+    for table in win.findChildren(QTableWidget):
+        if not table.isVisibleTo(win):
+            continue
+        # 这个窗口**没显示过**，item view 还没做布局 → viewport() 是初始小尺寸
+        # （实测 82×12），按它判"视口内"几乎全被误杀（DataItem 少算 19）。
+        # 先 doItemsLayout() 逼它算出真实视口（482×158），命中的单元数就与实测一致了。
+        table.doItemsLayout()
+        viewport = table.viewport().rect()
+        for r in range(table.rowCount()):
+            for c in range(table.columnCount()):
+                item = table.item(r, c)
+                if item is None:
+                    continue
+                # 视口外的行 Qt 不画，UIA 也看不到（虚拟化）
+                if table.visualItemRect(item).intersects(viewport):
+                    el(item.text(), "DataItemControl")
+
+    for lst in win.findChildren(QListWidget):
+        if not lst.isVisibleTo(win):
+            continue
+        lst.doItemsLayout()
+        viewport = lst.viewport().rect()
+        for r in range(lst.count()):
+            item = lst.item(r)
+            if lst.visualItemRect(item).intersects(viewport):
+                el(item.text(), "ListItemControl")
+
+    for bar in win.findChildren(QMenuBar):
+        if bar.isVisibleTo(win):
+            for act in bar.actions():   # 只算顶层（子菜单要展开才进 UIA）
+                el(act.text(), "MenuItemControl")
+
     return out
 
 
@@ -382,17 +467,15 @@ def build_episode(rng: random.Random, index: int, target_elements: int = 85,
 
 
 def estimate_elements(spec: dict) -> int:
-    """预计元素数（与 MockWindow 实际暴露的可交互控件大致对应）。"""
-    n = len(spec.get("fields", [])) + len(spec.get("buttons", []))
-    n += len(spec.get("checks", []))
-    n += len(spec.get("radios", {}).get("items", [])) if spec.get("radios") else 0
-    n += 1 if spec.get("combo") else 0
-    n += len(spec.get("list", {}).get("items", [])) if spec.get("list") else 0
-    n += sum(1 + len(c) for c in (spec.get("tree") or {}).values())
-    table = spec.get("table") or []
-    n += (1 if table else 0) + sum(len(r) for r in table)        # 表格 + 单元格
-    n += sum(1 + len(v) for v in (spec.get("menu") or {}).values())  # 菜单名 + 菜单项
-    return n
+    """预计元素数 —— **就是 `synthesize_elements` 的长度**。
+
+    2026-09-19 修：这里原先是另一个"纯数 spec 条目"的快速计数器，与
+    `synthesize_elements` **并存**。densify 用前者判停、验收用后者报数，
+    两者差了 30 多个元素（前者把折叠树节点/子菜单项/视口外单元格都算上），
+    于是"densify 觉得够了"和"实际看得见几个"彻底脱钩 —— 这就是尺度对齐造假的根。
+    现在只留一条真源：数得慢一点没关系，数错才是灾难。
+    """
+    return len(synthesize_elements(spec))
 
 
 def scale_report(specs: list[tuple[dict, str]], ckpt: str = "") -> dict:
@@ -556,8 +639,15 @@ def main() -> None:
         total["ok"] += stats["ok"]
         if ep % 25 == 0:
             avg = sum(total["elements"]) / len(total["elements"])
+            # 自检：实测均值必须落在目标附近。2026-09-19 的教训是"报出来的尺度"
+            # 可以因为估算器虚高而完全是假的（报 87、实际 56），所以这里只认**实测**。
+            off = abs(avg - args.target_elements)
+            flag = ""
+            if off > 0.2 * args.target_elements:
+                flag = (f"  ⚠️ 偏离目标 {args.target_elements} 达 {off:.0f} 个"
+                        f"（估算器/字体/布局可能又漂了，别信离线数字）")
             print(f"[{ep}/{args.episodes}] steps={total['steps']} ok={total['ok']} "
-                  f"元素均值={avg:.0f}", flush=True)
+                  f"元素均值={avg:.0f}{flag}", flush=True)
 
     avg = sum(total["elements"]) / max(len(total["elements"]), 1)
     print(f"完成: {total['episodes']} episodes, {total['steps']} 步 "

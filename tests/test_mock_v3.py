@@ -219,15 +219,45 @@ def test_build_episode_is_deterministic():
     assert a == b
 
 
-def test_estimate_elements_counts_all_widget_kinds():
+def test_estimator_only_counts_what_uia_can_see():
+    """估算器只能数"看得见"的东西——这条测试把可见性规则钉死。
+
+    2026-09-19 事故：旧版是**纯数 spec 条目**，把折叠的树节点、未展开的子菜单项、
+    视口外的表格行全算上，实测虚报 **+31/回合**；而 densify 又拿它当"够了"的判据 →
+    窗口里实际只有 ~52 个可见控件，对外却宣称"元素中位 87 对齐真实 84"。
+    """
+    import random as _random
+
     spec = {"fields": ["a", "b"], "buttons": [("x", True)], "checks": ["c"],
             "radios": {"items": ["r1", "r2"]}, "combo": {"name": "k", "items": ["i"]},
             "list": {"items": ["l1", "l2", "l3"]},
             "tree": {"p": ["c1", "c2"]}, "table": [["t1", "t2"]],
             "menu": {"m": ["mi1", "mi2"]}}
-    # 2 字段 + 1 按钮 + 1 勾选 + 2 单选 + 1 下拉 + 3 列表 + 3 树
-    # + 1 表格 + 2 单元格 + 1 菜单名 + 2 菜单项 = 19
-    assert mock_v3.estimate_elements(spec) == 19
+    names = [e["name"] for e in mock_v3.synthesize_elements(spec)]
+    types = {e["name"]: e["control_type"] for e in mock_v3.synthesize_elements(spec)}
+
+    # 看得见的：普通控件、顶层菜单项、树的顶层节点、视口内的列表项与单元格
+    assert {"a", "b", "x", "c", "r1", "r2"} <= set(names)
+    assert types.get("m") == "MenuItemControl"
+    assert types.get("p") == "TreeItemControl"
+    assert {"l1", "l2", "l3", "t1", "t2"} <= set(names)
+
+    # 看不见的，一个都不许算
+    assert "mi1" not in names, "子菜单项要展开才进 UIA"
+    assert "c1" not in names and "c2" not in names, "折叠子树的子节点 UIA 看不到"
+    assert "i" not in names, "下拉项只在弹层打开时才进 UIA"
+
+    assert len(names) == 14, f"诚实计数应为 14，得到 {len(names)}: {names}"
+
+
+def test_there_is_only_one_estimator():
+    """曾经有**两个**估算器（densify 用粗糙的、验收用另一个），差 30 多个元素，
+    "densify 觉得够了"与"实际看得见几个"彻底脱钩——尺度对齐就是这么造假的。
+    这条测试防止再分裂。"""
+    rng = random.Random(3)
+    spec, _, _ = mock_v3.build_episode(rng, 3, target_elements=85)
+
+    assert mock_v3.estimate_elements(spec) == len(mock_v3.synthesize_elements(spec))
 
 
 # ---- 尺度验收：v3 的观测要真的贴到真实桌面的量级 ----
