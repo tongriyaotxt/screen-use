@@ -16,6 +16,7 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
+| 09-19 | **人类基线工具**（8 个可验证日常任务，人/agent 同口径对照） | `scripts/baseline.py`、`tests/test_baseline.py` |
 | 09-19 | **mock v3 生成器 + 一条命令流水线**（尺度/语义/双语对齐真实分布） | `scripts/mock_v3.py`、`scripts/run_pipeline.py`、`tests/test_mock_v3.py` |
 | 09-19 | **真实域泛化首测（R4）**：joint_acc 0.17 / 升级率 90% → 加训练分布门控 | `screen_use/jev_bridge.py::ood_check`、`training/calibrate.py::train_stats`、`assets/bench/offline_eval_realdomain.json` |
 | 09-19 | **后台窗口元素表缓存 + 点击前 bbox 校验**（观测 326ms → 153ms） | `screen_use/perception/uia_tree.py`、`tools.py::_fresh_element` |
@@ -73,8 +74,12 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 - **B 真 GUI 端到端**：**只能在 owner 离开电脑时跑**。`scripts/bench_gui.py` 已备好
   （mock 窗口 + 零鼠标执行器 + 真 VisualLoop；`--driver oracle|jev|vlm`；默认拒跑，需 `--allow-gui`；
   `--offscreen` 自检已过）。首次真窗口运行建议人在旁边。
-- **C 通用性 + 人类基线**（成品标准的两个验收项）：按应用族（浏览器/Office/聊天/文件管理器/IDE）
-  各跑一组可验证任务；定义人类基线任务集与计时口径并实测。
+- **C 通用性 + 人类基线**（成品标准的两个验收项）：
+  - 人类基线工具已就绪：`scripts/baseline.py --mode human`（交互计时，几分钟）→
+    `--mode agent --i-am-away`（同 goal 同验证器真跑）→ `--mode report`（中位倍数 = 北极星单一数字）。
+    8 个任务覆盖记事本/计算器/资源管理器/浏览器，文件类程序化验证。
+  - 通用性实测：按应用族（浏览器/Office/聊天/文件管理器/IDE）各跑一组可验证任务，
+    记录成功率与升级率。
 - **D 攒真实数据**：日常用 run_task 自然攒 `traces_full`（快路径步标 `source=jev`）。
 
 ## 环境备忘（坑都踩过了）
