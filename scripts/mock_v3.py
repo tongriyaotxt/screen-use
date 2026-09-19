@@ -237,6 +237,14 @@ def bilingual(spec: dict, steps: list, rng: random.Random, prob: float = 0.5) ->
         return spec, steps
     spec = dict(spec)
     protected = data_names(spec)
+    # 现有全部控件名：改名不能造出重名控件，否则 oracle 按名字找目标会找错那个
+    # （v3 的干扰池里本来就有 "Save"/"Edit" 这类英文名，撞名是真会发生的）
+    taken = {n for n, _ in spec.get("buttons", [])} | set(spec.get("fields", [])) \
+        | set(spec.get("checks", [])) | protected
+    if spec.get("radios"):
+        taken |= set(spec["radios"]["items"])
+    if spec.get("combo"):
+        taken.add(spec["combo"]["name"])
     rename: dict[str, str] = {}
 
     def pick(name: str) -> str:
@@ -246,8 +254,9 @@ def bilingual(spec: dict, steps: list, rng: random.Random, prob: float = 0.5) ->
         if new is None and rng.random() < 0.35:
             new = rng.choice(["Apply", "Proceed", "Confirm", "Dismiss", "Run",
                               "Start", "Stop", "Retry", "Open", "New"])
-        if new and new != name and new not in protected:
+        if new and new != name and new not in protected and new not in taken:
             rename[name] = new
+            taken.add(new)
         return rename.get(name, name)
 
     spec["buttons"] = [(pick(n), en) for n, en in spec.get("buttons", [])]

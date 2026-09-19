@@ -139,6 +139,17 @@ def test_bilingual_can_be_disabled():
     assert ("保存", True) in new_spec["buttons"]
 
 
+def test_bilingual_never_creates_duplicate_names():
+    """改名不能造出重名控件：干扰池里本来就有 "Save"/"Edit"，撞名会让 oracle 找错目标。"""
+    rng = random.Random(40)
+    spec = {"fields": [], "checks": [], "buttons": [("保存", True), ("Save", True)]}
+    steps = [("click_id", "保存", None)]
+    for seed in range(20):
+        new_spec, _ = mock_v3.bilingual(spec, steps, random.Random(seed), prob=1.0)
+        names = [n for n, _ in new_spec["buttons"]]
+        assert len(names) == len(set(names)), f"seed={seed} 出现重名: {names}"
+
+
 # ---- 语义措辞：goal 不再照抄控件名 ----
 
 def test_semantic_goal_avoids_quoting_target_name():
