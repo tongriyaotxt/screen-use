@@ -112,32 +112,38 @@ class ScreenUse:
     # ================= 原子工具 =================
 
     def screenshot(self, annotate: bool = False,
-                   max_size: int | None = None, quality: int | None = None) -> dict:
+                   max_size: int | None = None, quality: int | None = None,
+                   elements: list[UIElement] | None = None) -> dict:
         """截屏。annotate=True 时叠加 SoM 编号框并附带元素列表。
 
         max_size / quality 缺省读配置；JPEG 字节数超 screenshot_max_bytes 时
         自动降 quality 重编码，保证 MCP 输出不被宿主截断。
         annotate 时 UIA 枚举与截图/缩放并行执行（不同子系统无线程冲突）。
+        elements: 调用方刚枚举过的元素（如 Jev 快路径升级时），复用即可跳过再次枚举
+        （实测本机一次枚举 ~0.4–1.4s，占每步开销大头）。
         """
         if max_size is None:
             max_size = self.settings.screenshot_max_size
         if quality is None:
             quality = self.settings.screenshot_jpeg_quality
-        elements: list[UIElement] = []
+        got_elements: list[UIElement] = elements or []
         if annotate:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                fut = pool.submit(self._enum_elements_in_thread)
+            if elements is None:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    fut = pool.submit(self._enum_elements_in_thread)
+                    img, scale = screen.downscale(screen.screenshot(), max_size)
+                    try:
+                        got_elements = fut.result(timeout=10)
+                    except Exception:
+                        # 线程内枚举失败（如 COM 环境异常）→ 主线程顺序枚举兑底
+                        got_elements = self.list_ui_elements_raw()
+            else:
                 img, scale = screen.downscale(screen.screenshot(), max_size)
-                try:
-                    elements = fut.result(timeout=10)
-                except Exception:
-                    # 线程内枚举失败（如 COM 环境异常）→ 主线程顺序枚举兑底
-                    elements = self.list_ui_elements_raw()
         else:
             img, scale = screen.downscale(screen.screenshot(), max_size)
         self._last_scale = scale
         if annotate:
-            img = som.annotate(img, elements, scale)
+            img = som.annotate(img, got_elements, scale)
         b64, used_quality = screen.to_jpeg_base64_capped(
             img, quality, self.settings.screenshot_max_bytes
         )
@@ -148,7 +154,7 @@ class ScreenUse:
             "height": img.size[1],
             "quality": used_quality,
             "foreground_title": self._foreground_title,
-            "elements": [el.to_dict() for el in elements],
+            "elements": [el.to_dict() for el in got_elements],
         }
 
     def _enum_elements_in_thread(self) -> list[UIElement]:
@@ -161,10 +167,22 @@ class ScreenUse:
         finally:
             comtypes.CoUninitialize()
 
-    def list_ui_elements_raw(self) -> list[UIElement]:
-        result = uia_tree.list_ui_elements()
+    def list_ui_elements_raw(self, budget_ms: int | None = None) -> list[UIElement]:
+        """枚举可交互元素（可选时间预算）。
+
+        预算把元素表清空时兜底不限时重来一次——宁可慢，不可瞎。
+        """
+        if budget_ms is None:
+            budget_ms = int(getattr(self.settings, "uia_budget_ms", 0) or 0)
+        result = uia_tree.list_ui_elements(budget_ms=budget_ms)
+        if not result and budget_ms:
+            result = uia_tree.list_ui_elements(budget_ms=0)
         self._foreground_title = getattr(result, "foreground_title", "")
         self._elements = list(result)
+        return self._elements
+
+    def cached_elements(self) -> list[UIElement]:
+        """最近一次枚举的元素（带 UIA 控件对象），供 screenshot(elements=...) 复用。"""
         return self._elements
 
     def list_ui_elements(self) -> dict:

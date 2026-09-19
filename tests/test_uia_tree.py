@@ -173,3 +173,54 @@ def test_dedup_by_identity():
     ]
     unique = _dedup_by_identity(els)
     assert [el.id for el in unique] == [1, 3, 4]
+
+
+# ---- 观测成本：时间预算 + 窗口成本记忆（2026-09-19 接入 Jev 后观测成新瓶颈） ----
+
+def test_collect_stops_at_deadline():
+    """到时间预算即停：最多走一个检查周期，已收集的元素保留。"""
+    import time as _time
+
+    root = _TreeCtrl(ctype="WindowControl",
+                     children=[_TreeCtrl(name=f"btn{i}") for i in range(5000)])
+    visited = [0]
+    elements = _collect_from(root, "慢窗口", 1234, 10**8, visited,
+                             deadline=_time.perf_counter() - 1)  # 已过期
+    assert len(elements) <= uia_tree.NODE_TIME_CHECK
+    assert visited[0] <= uia_tree.NODE_TIME_CHECK + 1
+
+
+def test_foreground_window_ignores_deadline():
+    """前台窗口不限时（调用方传 deadline=None）——它是 agent 的工作面。"""
+    root = _TreeCtrl(ctype="WindowControl",
+                     children=[_TreeCtrl(name=f"btn{i}") for i in range(50)])
+    elements = _collect_from(root, "前台", 1234, 10**8, [0], deadline=None)
+    assert len(elements) == 50
+
+
+class _Win:
+    def __init__(self, name):
+        self.Name = name
+
+
+def test_window_cost_memory_ema(monkeypatch):
+    """窗口成本记忆：没见过=0（排最前），之后按 EMA 更新，贵的排后面。"""
+    monkeypatch.setattr(uia_tree, "_WINDOW_COST", {})
+    assert uia_tree._window_cost(_Win("音乐播放器")) == 0.0
+    uia_tree._remember_cost("音乐播放器", 800.0)
+    assert uia_tree._window_cost(_Win("音乐播放器")) == 800.0
+    uia_tree._remember_cost("音乐播放器", 100.0)          # EMA: 0.7*800 + 0.3*100
+    assert uia_tree._window_cost(_Win("音乐播放器")) == pytest.approx(590.0)
+    # 贵的排后面：便宜窗口先走，预算用尽时丢的是无关的后台应用
+    wins = [_Win("音乐播放器"), _Win("记事本")]
+    assert sorted(wins, key=uia_tree._window_cost)[0].Name == "记事本"
+
+
+def test_window_cost_tolerates_bad_name(monkeypatch):
+    class _BadName:
+        @property
+        def Name(self):
+            raise RuntimeError("COM 异常")
+
+    monkeypatch.setattr(uia_tree, "_WINDOW_COST", {})
+    assert uia_tree._window_cost(_BadName()) == 0.0

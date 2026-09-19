@@ -41,7 +41,8 @@ def _make_tools(provider=None, settings=None) -> ScreenUse:
 @pytest.fixture(autouse=True)
 def mock_uia(monkeypatch):
     monkeypatch.setattr(
-        "screen_use.tools.uia_tree.list_ui_elements", lambda: list(FAKE_ELEMENTS)
+        "screen_use.tools.uia_tree.list_ui_elements",
+        lambda **kwargs: list(FAKE_ELEMENTS),
     )
 
 
@@ -178,6 +179,64 @@ def test_list_ui_elements_returns_foreground_title():
     result = tools.list_ui_elements()
     assert "foreground_title" in result and "elements" in result
     assert len(result["elements"]) == 3
+
+
+# ---- 观测成本：时间预算透传 + 空表兜底 + 元素表复用（2026-09-19） ----
+
+def test_list_ui_elements_passes_budget(monkeypatch):
+    """配置里的 uia_budget_ms 透传给枚举；预算不该被静默忽略。"""
+    seen = []
+
+    def fake_list(**kwargs):
+        seen.append(kwargs.get("budget_ms"))
+        return FAKE_ELEMENTS
+
+    monkeypatch.setattr("screen_use.tools.uia_tree.list_ui_elements", fake_list)
+    tools = _make_tools(settings=Settings(vision_provider="openai", uia_budget_ms=250))
+    tools.list_ui_elements()
+    assert seen == [250]
+
+
+def test_list_ui_elements_falls_back_when_budget_empties_table(monkeypatch):
+    """预算把元素表清空 → 不限时重来一次（宁可慢，不可瞎）。"""
+    seen = []
+
+    def fake_list(**kwargs):
+        seen.append(kwargs.get("budget_ms"))
+        return [] if kwargs.get("budget_ms") else FAKE_ELEMENTS
+
+    monkeypatch.setattr("screen_use.tools.uia_tree.list_ui_elements", fake_list)
+    tools = _make_tools(settings=Settings(vision_provider="openai", uia_budget_ms=100))
+    result = tools.list_ui_elements()
+    assert seen == [100, 0]
+    assert len(result["elements"]) == 3
+
+
+def test_screenshot_reuses_given_elements():
+    """screenshot(elements=...) 复用调用方刚枚举的表，不再枚举一次。"""
+    from PIL import Image
+
+    tools = _make_tools()
+    tools._foreground_title = "记事本"
+    with patch.object(ScreenUse, "_enum_elements_in_thread",
+                      side_effect=AssertionError("不该重复枚举")), \
+         patch("screen_use.tools.screen.screenshot",
+               return_value=Image.new("RGB", (800, 600), "white")):
+        shot = tools.screenshot(annotate=True, elements=FAKE_ELEMENTS)
+    assert [e["id"] for e in shot["elements"]] == [1, 2, 3]
+    assert shot["foreground_title"] == "记事本"
+    assert shot["image_base64"]
+
+
+def test_screenshot_enumerates_when_not_given_elements():
+    """不给 elements 时照旧自己枚举（老行为不变）。"""
+    from PIL import Image
+
+    tools = _make_tools()
+    with patch("screen_use.tools.screen.screenshot",
+               return_value=Image.new("RGB", (800, 600), "white")):
+        shot = tools.screenshot(annotate=True)
+    assert len(shot["elements"]) == 3
 
 
 # ---- click_scaled ----

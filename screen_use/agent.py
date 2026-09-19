@@ -223,6 +223,7 @@ class VisualLoop:
         self.memory = memory or ExperienceStore()
         self.jev = jev
         self._metrics: dict | None = None  # 当前 run 的指标桶（_observe 记截图次数用）
+        self._last_shot_is_light = False   # 上一轮观测是否只枚举了元素表（升级时可复用）
 
     def run(self, goal: str, on_step=None) -> TaskResult:
         """执行任务。on_step: 可选回调 fn(Step)，用于实时观察/日志。"""
@@ -403,6 +404,7 @@ class VisualLoop:
 
         full=False 且接了 Jev 时只枚举 UIA 元素表（零截图、零 JPEG 编码，
         快路径每步省的就是这块）；full=True 或纯 VLM 模式走原 screenshot(annotate)。
+        升级那一步会复用刚枚举过的元素表（`cached_elements`），不再重复枚举一次。
         """
         if self.jev is not None and not full:
             data = self.tools.list_ui_elements()
@@ -412,12 +414,18 @@ class VisualLoop:
                 "elements": data["elements"],
             }
         else:
+            elements = (self.tools.cached_elements()
+                        if self.jev is not None and self._last_shot_is_light else None)
             shot = self.tools.screenshot(
-                annotate=True, max_size=self.tools.settings.vlm_max_size
+                annotate=True, max_size=self.tools.settings.vlm_max_size,
+                elements=elements,
             )
             m = getattr(self, "_metrics", None)
             if m is not None:
                 m["screenshot_calls"] += 1  # 北极星指标：快路径省下的截图次数
+                if elements is not None:
+                    m["enum_reuse"] = m.get("enum_reuse", 0) + 1
+        self._last_shot_is_light = not full
         return shot, _legend(shot["elements"]), (shot.get("foreground_title") or "(未知)")
 
     # ================= Jev 快路径 =================

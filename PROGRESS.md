@@ -52,10 +52,14 @@ Jev 决策 p50 **43ms** vs VLM **5978ms**（139×）。但实测暴露两个新�
 
 ## 下一步（优先级 A > B > C，等 owner 指示或直接按 A 继续）
 
-- **A 压升级率（零训练成本）**：部署曲线显示 τ=0.72 → 覆盖率 0.743 / 升级率 ~0.26。
-  跑 `scripts/eval_offline.py --latency-samples 300` 确认后改 calibration.json 的 τ。
-- **B 砍观测成本（新瓶颈）**：UIA 枚举 0.68s/步 > Jev 决策 0.05s/步。
-  元素表缓存/增量枚举（窗口未变不重枚举）/降低 MAX_VISITED —— 单项收益最大。
+- **A 压升级率（零训练成本）**：✅ 已完成 2026-09-19 —— `training.calibrate --tau 0.72`
+  钉死（`calibration.json` 标 `tau_source: cli`），部署复核：覆盖率 0.743 / 升级率 0.257 /
+  风险 0.103 / 单步 p50 38.9ms。
+- **B 砍观测成本**：🔄 部分完成。体检 + 三种方案实测见 `research/desktop-jev/BENCH.md` §6：
+  升级步复用元素表（已默认开启，每次升级省 0.5–1.5s）· 时间预算开关
+  `SCREEN_USE_UIA_BUDGET_MS`（默认 0=不限，400 → 观测 0.55s 但元素表 56→27）·
+  多窗口并行**无收益已回退**。剩下最大一块：**后台窗口元素表缓存 + 点击前 bbox 校验**
+  （预期 1.3s → 0.2s 且不缩水），要动点击路径，**必须配 GUI 实测，不能盲改**。
 - **C 真 GUI 端到端**：**只能在 owner 离开电脑时跑**。`scripts/bench_gui.py` 已备好
   （mock 窗口 + 零鼠标执行器 + 真 VisualLoop；`--driver oracle|jev|vlm`；默认拒跑，需 `--allow-gui`；
   `--offscreen` 自检已过）。首次真窗口运行建议人在旁边。

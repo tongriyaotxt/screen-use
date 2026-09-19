@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import ctypes
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,6 +33,17 @@ MAX_ELEMENTS = 150
 MAX_WINDOWS = 8   # 真实桌面顶层窗口常达 10+（2026-09-18 实测 13），5 会整窗丢失目标
 MAX_DEPTH = 12
 MAX_VISITED = 3000  # DFS 已访问节点预算：防止大页面（浏览器/IDE）秒级遍历
+NODE_TIME_CHECK = 8  # 每走多少个节点检查一次时间预算（太密会自己变慢）
+
+# 默认枚举时间预算（毫秒，0 = 不限）。前台窗口永远不限时（它是 agent 的工作面），
+# 其余窗口按"学到的成本"从便宜到贵走，超预算即停——2026-09-19 实测：本机 437 个节点
+# 里，一个音乐播放器 + Alienware 控制中心吃掉 1220/1416 ms（每节点 ~4ms 的 COM 往返），
+# 而它们跟任务通常无关。预算只影响**后台**窗口的完整度，前台窗口永远完整。
+DEFAULT_BUDGET_MS = 400
+
+# 每个窗口的成本记忆（title → 毫秒 EMA）：用于把便宜窗口排在前面，
+# 预算用尽时丢的是贵的（通常是无关的后台应用），不是便宜的目标窗口。
+_WINDOW_COST: dict[str, float] = {}
 
 
 @dataclass
@@ -101,11 +113,16 @@ def set_element_text(el: UIElement, text: str) -> None:
 
 
 class ElementList(list):
-    """list[UIElement] + 枚举时的前台窗口标题（当普通 list 用完全向后兼容）。"""
+    """list[UIElement] + 枚举时的前台窗口标题（当普通 list 用完全向后兼容）。
 
-    def __init__(self, iterable=(), foreground_title: str = ""):
+    timings: 枚举耗时拆分（哪个窗口吃了多少节点/多少毫秒）——观测是接入 Jev 后的
+    新瓶颈（~0.7s/步 vs 决策 0.04s/步），优化前必须先看清钱花在哪。
+    """
+
+    def __init__(self, iterable=(), foreground_title: str = "", timings: dict | None = None):
         super().__init__(iterable)
         self.foreground_title = foreground_title
+        self.timings = timings or {}
 
 
 def _is_valid(ctrl) -> bool:
@@ -130,16 +147,21 @@ def _safe_handle(ctrl) -> int:
 
 
 def _collect_from(root_ctrl, window_title: str, window_handle: int, screen_area: int,
-                  visited: list[int]) -> list[UIElement]:
+                  visited: list[int], max_visited: int = MAX_VISITED,
+                  deadline: float | None = None) -> list[UIElement]:
     """从某个窗口的控件树收集可交互元素（深度优先）。
 
-    visited: 跨窗口共享的已访问节点计数（[0] 为计数器），到 MAX_VISITED 即停，
+    visited: 跨窗口共享的已访问节点计数（[0] 为计数器），到 max_visited 即停，
     防止浏览器/IDE 等大页面的控件树导致秒级遍历。
+    deadline: 绝对时间戳（perf_counter），到点就停止下降（已收集的元素保留）。
     """
     elements: list[UIElement] = []
 
     def walk(ctrl, depth: int) -> None:
-        if visited[0] >= MAX_VISITED or depth > MAX_DEPTH:
+        if visited[0] >= max_visited or depth > MAX_DEPTH:
+            return
+        if (deadline is not None and visited[0] % NODE_TIME_CHECK == 0
+                and time.perf_counter() > deadline):
             return
         visited[0] += 1
         try:
@@ -179,18 +201,33 @@ def _screen_size() -> tuple[int, int]:
     return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
 
 
-def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
+def list_ui_elements(max_elements: int = MAX_ELEMENTS,
+                     max_windows: int = MAX_WINDOWS,
+                     max_visited: int = MAX_VISITED,
+                     budget_ms: int | None = None) -> list[UIElement]:
     """枚举所有可见顶层窗口的可交互控件（前台窗口优先）。
 
     多窗口任务时 agent 需要能看到非前台窗口的元素（点击即激活该窗口），
     所以不只枚举前台。返回带稳定 id（1 起）的 ElementList（附带前台窗口标题）。
     预算分配：先逐窗口收集，再按"前台窗口优先 + 每窗口配额"截取，
     避免前台窗口的工具栏占满预算导致其他窗口/网页控件不可见。
+
+    budget_ms: 枚举**总**时间预算（0/None 用 DEFAULT_BUDGET_MS）。前台窗口永不限时，
+    其余窗口按学到的成本从便宜到贵走，超预算即停（已收集的元素保留，元素表可能变短）。
+    实测拆分见 `el.timings`。并行遍历试过（2026-09-19）：本机无收益（UIA 跨进程调用
+    在 broker 侧仍然串行），已回退。
     """
+    import time
+
     import uiautomation as auto
 
     from screen_use.perception.screen import ensure_dpi_aware
 
+    if budget_ms is None:
+        budget_ms = DEFAULT_BUDGET_MS
+    deadline = (time.perf_counter() + budget_ms / 1000) if budget_ms else None
+
+    t_start = time.perf_counter()
     ensure_dpi_aware()
 
     screen_w, screen_h = _screen_size()
@@ -216,20 +253,44 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
         except Exception:
             continue
     windows.sort(key=lambda w: 0 if _safe_handle(w) == fg_handle else 1)
+    windows_ms = (time.perf_counter() - t_start) * 1000
 
-    # 逐窗口收集（共享节点预算），并记录窗口标题
+    # 后台窗口按学到的成本升序：预算用尽时丢的是贵的（通常与任务无关）
+    foreground = [w for w in windows[:max_windows] if _safe_handle(w) == fg_handle][:1]
+    background = [w for w in windows[:max_windows] if _safe_handle(w) != fg_handle]
+    background.sort(key=lambda w: _window_cost(w))
+
+    # 逐窗口收集（共享节点预算 + 总时间预算；前台窗口不吃截止时间）
     visited = [0]
     per_window: list[list[UIElement]] = []
     foreground_title = ""
-    for w in windows[:MAX_WINDOWS]:  # 前台优先，最多 5 个窗口
+    per_window_stats: list[dict] = []
+    skipped: list[str] = []
+    for w in foreground + background:
         try:
             title = (w.Name or "").strip() or "(无标题)"
         except Exception:
             title = "(无标题)"
         handle = _safe_handle(w)
-        if handle == fg_handle:
+        is_fg = handle == fg_handle
+        if is_fg:
             foreground_title = title
-        per_window.append(_collect_from(w, title, handle, screen_area, visited))
+        if not is_fg and deadline is not None and time.perf_counter() > deadline:
+            skipped.append(title[:40])  # 预算用尽：跳过（timings 里如实记账）
+            continue
+        t_w = time.perf_counter()
+        nodes_before = visited[0]
+        els = _collect_from(w, title, handle, screen_area, visited, max_visited,
+                            deadline=None if is_fg else deadline)
+        spent = (time.perf_counter() - t_w) * 1000
+        _remember_cost(title, spent)
+        per_window_stats.append({
+            "title": title[:40], "nodes": visited[0] - nodes_before,
+            "elements": len(els), "ms": round(spent, 1),
+            "foreground": is_fg,
+            "cut": bool(not is_fg and deadline is not None and time.perf_counter() > deadline),
+        })
+        per_window.append(els)
 
     # 配额分配：前台窗口保底一半，其余窗口均分另一半。
     # 每窗口内先去重再按面积升序截取：重复项不吃配额，小控件（按钮）优先于大容器——
@@ -251,7 +312,30 @@ def list_ui_elements(max_elements: int = MAX_ELEMENTS) -> list[UIElement]:
 
     for i, el in enumerate(unique, start=1):
         el.id = i
-    return ElementList(unique, foreground_title=foreground_title)
+    timings = {
+        "total_ms": round((time.perf_counter() - t_start) * 1000, 1),
+        "windows_ms": round(windows_ms, 1),
+        "nodes": visited[0],
+        "n_windows": len(per_window),
+        "budget_ms": budget_ms,
+        "skipped": skipped,
+        "windows": per_window_stats,
+    }
+    return ElementList(unique, foreground_title=foreground_title, timings=timings)
+
+
+def _window_cost(win) -> float:
+    """窗口的历史枚举成本（毫秒，EMA）；没见过的按 0 排前面（先便宜后贵）。"""
+    try:
+        title = (win.Name or "").strip() or "(无标题)"
+    except Exception:
+        return 0.0
+    return _WINDOW_COST.get(title, 0.0)
+
+
+def _remember_cost(title: str, spent_ms: float) -> None:
+    old = _WINDOW_COST.get(title)
+    _WINDOW_COST[title] = spent_ms if old is None else old * 0.7 + spent_ms * 0.3
 
 
 def _dedup_by_identity(elements: list[UIElement]) -> list[UIElement]:

@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     # 加载失败自动降级为纯 VLM（screen_use/jev_bridge.load_engine 只警告不抛）。
     jev_checkpoint: str = ""
 
+    # UIA 枚举时间预算（毫秒，0 = 不限，默认不限 = 行为与接入前一致）。
+    # 接入 Jev 后观测（~0.7–1.5s/步）取代决策（~0.04s/步）成为每步大头，实测本机
+    # 437 个节点里两个无关后台窗口吃掉 86% 的时间。设成 400 可把观测压到 ~0.6s，
+    # 但元素表会少一半（51 → 26）——这是速度/覆盖率的显式取舍，默认不动它。
+    # 逐档实测见 scripts/measure_observe.py。
+    uia_budget_ms: int = 0
+
     @property
     def vlm_available(self) -> bool:
         """VLM 是否可用：本地 Ollama 不需要 API key，云端需要。"""

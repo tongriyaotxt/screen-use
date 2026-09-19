@@ -307,8 +307,10 @@ def test_loop_uses_vlm_max_size():
     tools = ScreenUse(dry_run=True, settings=settings, provider=provider)
     captured = {}
 
-    def fake_screenshot(self, annotate=False, max_size=None, quality=None):
+    def fake_screenshot(self, annotate=False, max_size=None, quality=None,
+                        elements=None):
         captured["max_size"] = max_size
+        captured["elements"] = elements
         return dict(FAKE_SHOT)
 
     with patch.object(ScreenUse, "screenshot", fake_screenshot), \
@@ -409,7 +411,7 @@ def mock_uia(monkeypatch):
     """快路径观测走 UIA 元素表：给它一个带前台标题的元素表。"""
     monkeypatch.setattr(
         "screen_use.tools.uia_tree.list_ui_elements",
-        lambda: ElementList(FAKE_ELEMENTS, foreground_title="MockUI-1"),
+        lambda **kwargs: ElementList(FAKE_ELEMENTS, foreground_title="MockUI-1"),
     )
 
 
@@ -560,3 +562,42 @@ def test_pure_vlm_metrics_ring(mock_uia):
     assert result.metrics["ring"] == "vlm"
     assert result.metrics["vlm_steps"] == 1 and result.metrics["screenshot_calls"] == 1
     assert result.metrics["jev_steps"] == 0
+
+
+# ---- 观测成本：升级时复用刚枚举的元素表（2026-09-19） ----
+
+def test_escalation_reuses_enumerated_elements(mock_uia):
+    """升级那一步复用刚枚举的元素表，不再多花一次 UIA 枚举（实测 ~0.4–1.4s）。"""
+    provider = ScriptProvider(['{"action": "done", "result": "慢路径完成"}'])
+    tools = _loop_tools(provider)
+    jev = FakeJev([{"action": "CLICK", "element_id": 1, "confidence": 0.2}])
+    captured = {}
+
+    def fake_screenshot(self, annotate=False, max_size=None, quality=None,
+                        elements=None):
+        captured["elements"] = elements
+        return dict(FAKE_SHOT)
+
+    with patch.object(ScreenUse, "screenshot", fake_screenshot), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=3, jev=jev).run("点一下1号按钮")
+
+    assert result.done is True
+    assert captured["elements"] and captured["elements"][0].id == 1  # 复用而非重枚举
+    assert result.metrics["enum_reuse"] == 1
+
+
+def test_fast_path_does_not_reuse_across_steps(mock_uia):
+    """跨步不复用：每步都重新枚举（动作可能改变界面）。"""
+    provider = ScriptProvider(["不该被调用"])
+    tools = _loop_tools(provider)
+    jev = FakeJev([
+        {"action": "CLICK", "element_id": 1, "confidence": 0.9},
+        {"action": "DONE", "confidence": 0.9},
+    ])
+    with patch.object(ScreenUse, "screenshot", _no_screenshot), \
+         patch("screen_use.agent.time.sleep"):
+        result = VisualLoop(tools, max_steps=3, jev=jev).run("任务")
+    assert result.done is True
+    assert len(jev.calls) == 2
+    assert "enum_reuse" not in result.metrics
