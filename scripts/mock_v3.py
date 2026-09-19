@@ -443,6 +443,25 @@ def _wait_for_user_to_leave(idle_s: float, ep: int) -> None:
           f"（本回合等了 {time.time() - t0:.0f}s）", flush=True)
 
 
+def _abort_on_empty_observation(ep: int, episode_id: str, n_elem: int,
+                                out_dir: Path) -> None:
+    """观测到 0 个控件 → 窗口对 UIA 根本不可见，立刻熔断。
+
+    什么时候会这样：锁屏后 UIA 可能枚举不到窗口、平台插件不是真窗口（offscreen）、
+    桌面被别的应用独占。此时继续跑只会量产一堆「元素表为空」的垃圾——
+    而空表喂进训练 = 教模型在什么都没有的屏幕上下判断，比不跑还坏。
+    所以删掉这一回合的文件再抛错，让流水线响亮地停下（断点续跑不会捡回垃圾）。
+    """
+    if n_elem:
+        return
+    bad = out_dir / f"{episode_id}.jsonl"
+    bad.unlink(missing_ok=True)
+    raise SystemExit(
+        f"第 {ep} 回合观测到 0 个控件：窗口对 UIA 不可见"
+        f"（锁屏？平台插件？桌面被独占？）。已删除 {bad.name} 并中止——"
+        f"继续跑只会量产空观测的垃圾数据。")
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser()
@@ -499,11 +518,13 @@ def main() -> None:
             app.processEvents()
             time.sleep(0.4)
             stats = runner.run(win, goal, steps, episode_id)
-            total["elements"].append(len(runner._observe(episode_id)))
+            n_elem = len(runner._observe(episode_id))
         finally:
             # 确认框/弹层随窗口一起收（2026-09-19 卡死事故，见 MockWindow.teardown）
             win.teardown()
             app.processEvents()
+        _abort_on_empty_observation(ep, episode_id, n_elem, out_dir)
+        total["elements"].append(n_elem)
         total["episodes"] += 1
         total["steps"] += stats["steps"]
         total["ok"] += stats["ok"]

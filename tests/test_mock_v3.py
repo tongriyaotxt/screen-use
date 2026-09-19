@@ -415,3 +415,29 @@ def test_v3_layout_widgets_do_not_overlap(monkeypatch):
         finally:
             win.close()
         app.processEvents()
+
+
+# ---- 空观测熔断：窗口对 UIA 不可见时必须停下，而不是量产垃圾 ----
+
+def test_empty_observation_aborts_and_deletes_the_bad_round(tmp_path):
+    """锁屏等情况下 UIA 看不见窗口 → 元素表为空。
+
+    这种回合继续跑只会量产"空屏幕"数据（喂进训练 = 教模型在什么都没有的屏幕上决策），
+    所以必须响亮地停下，并把这回合的文件删掉，免得断点续跑时又被捡回来。
+    """
+    bad = tmp_path / "mock-v3-7-0123.jsonl"
+    bad.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0 个控件"):
+        mock_v3._abort_on_empty_observation(123, "mock-v3-7-0123", 0, tmp_path)
+
+    assert not bad.exists(), "垃圾回合的文件必须删掉"
+
+
+def test_nonempty_observation_is_left_alone(tmp_path):
+    good = tmp_path / "mock-v3-7-0124.jsonl"
+    good.write_text("{}", encoding="utf-8")
+
+    mock_v3._abort_on_empty_observation(124, "mock-v3-7-0124", 87, tmp_path)
+
+    assert good.exists()
