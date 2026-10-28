@@ -59,8 +59,24 @@ class Executor:
     def double_click(self, x: int, y: int) -> ActionResult:
         return self.click(x, y, clicks=2)
 
-    def right_click(self, x: int, y: int) -> ActionResult:
-        return self.click(x, y, button="right")
+    def right_click(self, x: int, y: int, hold_ms: int = 120) -> ActionResult:
+        """右键。
+
+        CATIA 这类 CAA 自定义控件（规格树等）要求 RIGHTDOWN 与 RIGHTUP 之间有
+        可感知的间隔，`pyautogui.click(button='right')` 的瞬时 DOWN+UP 会被忽略、
+        表现为"点了没反应"。这里改成 moveTo → 停顿 → mouseDown → 保持 → mouseUp。
+        """
+        detail = f"({x}, {y}) button=right hold={hold_ms}ms"
+
+        def op():
+            pyautogui.moveTo(x, y)
+            time.sleep(0.08)
+            pyautogui.mouseDown(button="right")
+            time.sleep(hold_ms / 1000.0)
+            pyautogui.mouseUp(button="right")
+            time.sleep(0.12)
+
+        return self._mouse_op(op, "right_click", detail)
 
     def move_to(self, x: int, y: int) -> ActionResult:
         return self._mouse_op(lambda: pyautogui.moveTo(x, y), "move_to", f"({x}, {y})")
