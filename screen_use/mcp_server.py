@@ -65,15 +65,26 @@ def double_click(x: int, y: int) -> str:
 
 
 @mcp.tool()
-def right_click(x: int, y: int) -> str:
-    """右键点击屏幕坐标 (x, y)。"""
-    return json.dumps(tools.right_click(x, y), ensure_ascii=False)
+def right_click(x: int, y: int, hold_ms: int = 120) -> str:
+    """右键点击屏幕坐标 (x, y)。
+
+    hold_ms 是 RIGHTDOWN→RIGHTUP 的按住时长（默认 120ms）。CATIA 这类 CAA 控件
+    对瞬时右键没反应，可把它调到 200-400 再试。
+    """
+    return json.dumps(tools.right_click(x, y, hold_ms=hold_ms), ensure_ascii=False)
 
 
 @mcp.tool()
-def click_element_id(element_id: int) -> str:
-    """点击 list_ui_elements 返回的元素 id（使用最近一次枚举的缓存）。"""
-    return json.dumps(tools.click_element_id(element_id), ensure_ascii=False)
+def click_element_id(element_id: int, button: str = "left", clicks: int = 1,
+                     hold_ms: int = 120) -> str:
+    """点击 list_ui_elements 返回的元素 id（使用最近一次枚举的缓存）。
+
+    button="right" 走按住式右键；clicks=2 双击。可省掉一次坐标换算与误点。
+    """
+    return json.dumps(
+        tools.click_element_id(element_id, button=button, clicks=clicks, hold_ms=hold_ms),
+        ensure_ascii=False,
+    )
 
 
 @mcp.tool()

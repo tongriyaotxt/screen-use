@@ -128,6 +128,36 @@ def test_click_element_id_invalid():
         tools.click_element_id(999)
 
 
+# ---- 按钮/次数语义（2026-11-09）：右键元素不能退化成左键单击 ----
+
+def test_click_element_id_right_button_uses_hold_path():
+    """button="right" 必须路由到按住式右键（detail 带 hold=），否则 CATIA 无反应。"""
+    tools = _make_tools()
+    tools.list_ui_elements()
+    result = tools.click_element_id(1, button="right")
+    assert result["action"] == "right_click"
+    assert "button=right" in result["detail"] and "hold=" in result["detail"]
+
+
+def test_click_element_id_double_click_passes_two_clicks():
+    tools = _make_tools()
+    tools.list_ui_elements()
+    result = tools.click_element_id(1, clicks=2)
+    assert result["action"] == "click"
+    assert "clicks=2" in result["detail"]
+
+
+def test_do_actions_passes_button_and_hold_to_element_click():
+    """do_actions 的 click_element_id 也要能指定 button/clicks/hold_ms。"""
+    tools = _make_tools()
+    tools.list_ui_elements()
+    out = tools.do_actions([
+        {"action": "click_element_id", "element_id": 1, "button": "right", "hold_ms": 300},
+    ])
+    assert out["results"][0]["ok"] is True
+    assert "hold=300ms" in out["results"][0]["detail"]
+
+
 # ---- 缓存过期安全阀：点击前 bbox 校验 + 刷新重解析（2026-09-19） ----
 
 class _CtlWithRect:

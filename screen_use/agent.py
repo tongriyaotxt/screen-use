@@ -547,14 +547,16 @@ class VisualLoop:
             return f"点击元素 #{decision['id']}"
         if action == "double_click":
             if decision.get("id") is not None:
-                t.click_element_id(int(decision["id"]))
+                r = t.click_element_id(int(decision["id"]), clicks=2)
                 return f"双击元素 #{decision['id']}"
             x, y = int(decision["x"] * scale), int(decision["y"] * scale)
             t.double_click(x, y)
             return f"双击 ({x}, {y})"
         if action == "right_click":
             if decision.get("id") is not None:
-                t.click_element_id(int(decision["id"]))
+                # 2026-11-09：这里原先调 click_element_id 的默认参数 = 左键单击，
+                # 右键元素永远点不出上下文菜单（CATIA 上表现为"点了没反应"）。
+                r = t.click_element_id(int(decision["id"]), button="right")
                 return f"右键元素 #{decision['id']}"
             x, y = int(decision["x"] * scale), int(decision["y"] * scale)
             t.right_click(x, y)

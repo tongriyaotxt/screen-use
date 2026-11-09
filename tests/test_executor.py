@@ -20,14 +20,36 @@ def test_dry_run_records_without_executing():
 
 
 def test_real_mode_calls_pyautogui():
-    with patch("screen_use.actions.executor.pyautogui") as mock_gui:
+    with patch("screen_use.actions.executor.pyautogui") as mock_gui, \
+         patch("screen_use.actions.executor.time.sleep"):
         ex = Executor(dry_run=False)
         ex.click(10, 20)
         mock_gui.click.assert_called_once_with(10, 20, clicks=1, button="left")
         ex.double_click(10, 20)
         mock_gui.click.assert_called_with(10, 20, clicks=2, button="left")
         ex.right_click(10, 20)
-        mock_gui.click.assert_called_with(10, 20, clicks=1, button="right")
+        # 2026-10-28 起 right_click 不再复用 pyautogui.click(button="right")：
+        # CATIA 等 CAA 控件要求 RIGHTDOWN/RIGHTUP 之间有可感知间隔，否则"点了没反应"。
+        mock_gui.moveTo.assert_called_with(10, 20)
+        mock_gui.mouseDown.assert_called_once_with(button="right")
+        mock_gui.mouseUp.assert_called_once_with(button="right")
+        mock_gui.click.assert_called_with(10, 20, clicks=2, button="left")  # 没被右键偷偷复用
+
+
+def test_right_click_holds_button_between_down_and_up():
+    """按住间隔必须落到 DOWN 与 UP 之间，且默认 120ms、可外部覆盖（CATIA 需要更长）。"""
+    from unittest.mock import call
+
+    with patch("screen_use.actions.executor.pyautogui") as mock_gui, \
+         patch("screen_use.actions.executor.time.sleep") as mock_sleep:
+        Executor(dry_run=False).right_click(30, 40, hold_ms=250)
+
+    order = [c[0] for c in mock_gui.mock_calls if c[0] in ("moveTo", "mouseDown", "mouseUp")]
+    assert order == ["moveTo", "mouseDown", "mouseUp"]
+    assert mock_gui.mock_calls.index(call.mouseDown(button="right")) < \
+        mock_gui.mock_calls.index(call.mouseUp(button="right"))
+    # 0.08s 落点稳定 → 0.25s 按住 → 0.12s 收尾
+    assert [c.args[0] for c in mock_sleep.call_args_list] == [0.08, 0.25, 0.12]
 
 
 def test_type_text_ascii_uses_typewrite():

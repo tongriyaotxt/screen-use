@@ -15,6 +15,10 @@ import pyautogui
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.02
 
+# 右键按住时长（毫秒）。CATIA/CAA 控件对瞬时 DOWN+UP 无反应，默认给 120ms；
+# 个别控件仍吃不住时调用方可显式加大（tools/mcp 已透传 hold_ms）。
+DEFAULT_RIGHT_HOLD_MS = 120
+
 
 @dataclass
 class ActionResult:
@@ -51,7 +55,17 @@ class Executor:
 
     # ---- 鼠标 ----
 
-    def click(self, x: int, y: int, button: str = "left", clicks: int = 1) -> ActionResult:
+    def click(self, x: int, y: int, button: str = "left", clicks: int = 1,
+              hold_ms: int = DEFAULT_RIGHT_HOLD_MS) -> ActionResult:
+        """点击 (x, y)。
+
+        button="right" 时**不走** `pyautogui.click(button="right")`（瞬时 DOWN+UP 会被
+        CATIA 等 CAA 控件忽略），统一路由到 `_right_press` 的按住路径——这样
+        `click_element_id(button="right")` 与 `right_click()` 行为必然一致，
+        不会因为调用入口不同而"有时点得动、有时点不动"。
+        """
+        if button == "right":
+            return self._right_press(x, y, hold_ms=hold_ms, clicks=clicks)
         detail = f"({x}, {y}) button={button} clicks={clicks}"
         return self._mouse_op(lambda: pyautogui.click(x, y, clicks=clicks, button=button),
                               "click", detail)
@@ -59,21 +73,27 @@ class Executor:
     def double_click(self, x: int, y: int) -> ActionResult:
         return self.click(x, y, clicks=2)
 
-    def right_click(self, x: int, y: int, hold_ms: int = 120) -> ActionResult:
-        """右键。
+    def right_click(self, x: int, y: int, hold_ms: int = DEFAULT_RIGHT_HOLD_MS) -> ActionResult:
+        """右键（= click(..., button="right") 的语义别名，保留给老调用点）。"""
+        return self.click(x, y, button="right", hold_ms=hold_ms)
 
-        CATIA 这类 CAA 自定义控件（规格树等）要求 RIGHTDOWN 与 RIGHTUP 之间有
-        可感知的间隔，`pyautogui.click(button='right')` 的瞬时 DOWN+UP 会被忽略、
-        表现为"点了没反应"。这里改成 moveTo → 停顿 → mouseDown → 保持 → mouseUp。
+    def _right_press(self, x: int, y: int, hold_ms: int = DEFAULT_RIGHT_HOLD_MS,
+                     clicks: int = 1) -> ActionResult:
+        """CATIA 这类 CAA 自定义控件（规格树等）要求 RIGHTDOWN 与 RIGHTUP 之间有
+        可感知的间隔；瞬时 DOWN+UP 会被忽略，表现为"点了没反应"。
+        这里改成 moveTo → 停顿 → mouseDown → 保持 → mouseUp。
         """
-        detail = f"({x}, {y}) button=right hold={hold_ms}ms"
+        detail = f"({x}, {y}) button=right hold={hold_ms}ms clicks={clicks}"
 
         def op():
             pyautogui.moveTo(x, y)
             time.sleep(0.08)
-            pyautogui.mouseDown(button="right")
-            time.sleep(hold_ms / 1000.0)
-            pyautogui.mouseUp(button="right")
+            for i in range(max(1, clicks)):
+                if i:
+                    time.sleep(0.08)
+                pyautogui.mouseDown(button="right")
+                time.sleep(hold_ms / 1000.0)
+                pyautogui.mouseUp(button="right")
             time.sleep(0.12)
 
         return self._mouse_op(op, "right_click", detail)

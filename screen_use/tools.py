@@ -10,7 +10,7 @@ import concurrent.futures
 import time
 from typing import Callable
 
-from screen_use.actions.executor import Executor
+from screen_use.actions.executor import DEFAULT_RIGHT_HOLD_MS, Executor
 from screen_use.config import Settings, get_settings
 from screen_use.memory import ExperienceStore
 from screen_use.perception import screen, som, uia_tree
@@ -233,22 +233,31 @@ class ScreenUse:
     def double_click(self, x: int, y: int) -> dict:
         return self.executor.double_click(x, y).__dict__
 
-    def right_click(self, x: int, y: int) -> dict:
-        return self.executor.right_click(x, y).__dict__
+    def right_click(self, x: int, y: int, hold_ms: int = DEFAULT_RIGHT_HOLD_MS) -> dict:
+        return self.executor.right_click(x, y, hold_ms=hold_ms).__dict__
 
-    def click_element_id(self, element_id: int) -> dict:
+    def click_element_id(self, element_id: int, button: str = "left", clicks: int = 1,
+                         hold_ms: int = DEFAULT_RIGHT_HOLD_MS) -> dict:
         """点击 list_ui_elements 返回的元素 id（使用最近一次枚举的缓存）。
 
         点击前做一次实时 bbox 校验（背景窗口元素表可能来自缓存）：
         控件移位/失效 → 自动刷新重解析，仍找不到则报错，绝不点到别处。
+
+        button="right" 走 executor 的按住路径（CATIA 需要 DOWN/UP 间隔），
+        不指定按钮时就是普通左键——老调用点行为不变。
         """
         for el in self._elements:
             if el.id == element_id:
                 el = self._fresh_element(el)
                 x, y = el.center
-                self._confirm(f"点击元素 #{element_id} [{el.control_type}] {el.name!r} @({x},{y})")
+                how = "右键" if button == "right" else ("双击" if clicks >= 2 else "点击")
+                self._confirm(
+                    f"{how}元素 #{element_id} [{el.control_type}] {el.name!r} @({x},{y})"
+                )
                 self._activate_window(el)
-                return self.executor.click(x, y).__dict__ | {"element": el.to_dict()}
+                return self.executor.click(
+                    x, y, button=button, clicks=clicks, hold_ms=hold_ms
+                ).__dict__ | {"element": el.to_dict()}
         raise ValueError(
             f"元素 id={element_id} 不存在，请先调用 list_ui_elements 刷新元素列表"
         )
@@ -336,7 +345,8 @@ class ScreenUse:
         if action == "double_click":
             return self.double_click(int(spec["x"]), int(spec["y"]))
         if action == "right_click":
-            return self.right_click(int(spec["x"]), int(spec["y"]))
+            return self.right_click(int(spec["x"]), int(spec["y"]),
+                                    hold_ms=int(spec.get("hold_ms", DEFAULT_RIGHT_HOLD_MS)))
         if action == "type_text":
             return self.type_text(str(spec["text"]))
         if action == "press":
@@ -349,7 +359,12 @@ class ScreenUse:
         if action == "scroll":
             return self.scroll(int(spec["clicks"]), spec.get("x"), spec.get("y"))
         if action == "click_element_id":
-            return self.click_element_id(int(spec["element_id"]))
+            return self.click_element_id(
+                int(spec["element_id"]),
+                button=str(spec.get("button", "left")),
+                clicks=int(spec.get("clicks", 1)),
+                hold_ms=int(spec.get("hold_ms", DEFAULT_RIGHT_HOLD_MS)),
+            )
         if action == "set_element_text":
             return self.set_element_text(int(spec["element_id"]), str(spec["text"]))
         raise ValueError(f"不支持的动作: {action!r}")
