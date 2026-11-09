@@ -1,22 +1,25 @@
 # PROGRESS — screen-use / desktop-jev
 
-> 最后更新：2026-09-19 13:45（v3 流水线已挂后台跑，等 owner 离开电脑自动推进）。
-> 下次会话：先读本文 + `assets/bench/logs/pipeline_*.log`，向 owner 汇报并继续。
+> 最后更新：2026-11-09（补记 09-19 的 v3 全流程结果 —— 一个**负结果**；并修掉右键语义 bug）。
+> 下次会话：先读本文 + `research/desktop-jev/BENCH.md` §7.3，再按下面的方向修正继续。
 
 ## 一句话状态
 
-**Jev 已接进 VisualLoop 快路径并跑通首测**：mock 域每任务 **17.7s → 10.2s（1.74×）**，
-Jev 决策 p50 **40ms** vs VLM **5978ms**。
-但真实域首测（traces_full 76 样本）暴露硬伤：**真实桌面元素表中位 84（mock 14）、token 2380（mock 457），
-Jev 的 joint_acc 从 0.77 掉到 0.17、升级率 90%** —— 泛化是当前第一瓶颈。
-已加**训练分布门控**（观测超出训练尺度就不问模型，直接升级）：真实域 Jev 侧耗时 452ms → **0ms**，
-mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上快路径的价值是 0、安全是满分**；
-要达成 owner 的成品标准（通用可用 + 快于人类），下一步必须补数据分布。
+**v3 那条"补数据分布"的路已经跑完并且失败**：mock v3 留出集 joint_acc 0.630、mock 基准
+coverage 0.46，但**真实域裸 joint_acc 0.167（v0 是 0.17）、升级率 98.3%、部署 coverage 1.7%**
+——元素中位做到 86（对齐真实 84）也没用，尺度不是瓶颈。真实域 op_acc 0.63–0.83 而 joint 0.17，
+说明**瓶颈在元素落地**：真实 goal 不引用控件名，而 tight 格式把 AutomationId/快捷键/HelpText/
+层级分组全砍了，纯文本观测里没有可落的语义线索。另外真实域 p95 时延 **10.3s**，
+"0.1s/步"的前提在长表上不成立。详见 BENCH.md §7.3。
+
+上一阶段（09-19）的成果仍然有效：Jev 接进 VisualLoop 快路径、mock 域 1.74×、
+三环 cascade 协议、观测格式 v2（会话级稳定 id + 状态位）。
 
 ## 已完成（倒序）
 
 | 日期 | 内容 | 位置 |
 |---|---|---|
+| 11-09 | **右键语义修正 + 负结果收档**：①`click_element_id` 原先只有左键，`RIGHT_CLICK/DOUBLE_CLICK` 带 id 的决策被静默降级成"左键单击"（CATIA 上下文菜单永远出不来）→ `executor.click(button="right")` 统一走按住路径，`DEFAULT_RIGHT_HOLD_MS` 常量 + tools/do_actions/MCP 全透传 `hold_ms`；②把 09-19 v3 全流程的**负结果**写进 BENCH §7.3（之前只在 `assets/bench/` 里躺着，没人读就会重跑一遍） | `executor.py`、`tools.py`、`agent.py`、`mcp_server.py`、`tests/test_executor.py`、`tests/test_tools.py`、BENCH §7.3 |
 | 09-19 | **撤回"尺度对齐"并重修**（owner 一句「我没看到纯图标」牵出来的）：①**项目里有两个估算器**——`densify` 判"够了"用的是粗糙的 `estimate_elements`（把折叠树节点/子菜单项/视口外单元格全算上，虚报 **+31/回合**），验收报数用的是另一个；②`_observe` 按几何矩形捞外来元素，**owner 的终端窗口**（窗口标题就是对话名）贡献 3160 个元素、泄漏确认框 604 个，把假象坐实；③于是"报 87 / 实际 52 / 看到 86"三者互相佐证了一个不存在的对齐。修法：估算器只剩**一条真源**且改成**照 Qt 可见性数**、元素带 `pid` 只留本进程窗口、按真实构成（**76% 是按钮**）重做布局预算（按钮池 25→78、网格 3→8 行、窗口 1200×740）、加运行时自检（只认实测） | `scripts/mock_v3.py`、`scripts/mock_env.py`、`screen_use/perception/uia_tree.py`、`tests/test_mock_v3.py`、BENCH.md §7.1/§7.2 |
 | 09-19 | **真画图标**（owner 报「我没看到纯图标」）：v3 所谓"图标按钮"其实是 `QPushButton("")` **空白方块**；真实那批是窗口按钮 ─ □ ✕（实测 945/9284=10.2% 无名、全是 ButtonControl、bbox 69×60 贴右上角）。现 `_glyph_icon()` 画通用几何图形（**刻意不画语义图标**，免得诱导 VLM 点错污染对照）+ 「无名比例归零」告警护栏 | `scripts/mock_env.py`、`scripts/mock_v3.py`、`tests/test_mock_windows.py`、BENCH.md §8.7 |
 | 09-19 | **修训练集标签污染**：`iter_samples` 的 docstring 写着「跳过…执行失败步」，代码里**没有这个判断** → 失败步（`args` 为空）被当成「CLICK 无目标元素」的**正样本**。实测 v3 14/290、v2 68/3100、真实 25/105 都中招（**v0 那轮就吃进去了**）。修后 v3 样本 290→276 | `training/common.py`、`tests/test_training_common.py`（+5 测试） |
@@ -39,7 +42,9 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
 | 09-18 | 研究文档：desktop-jev 五件 + cascade-protocol | `research/desktop-jev/`、`research/cascade-protocol/` |
 | 09-18 | 线上问题修复×4：焦点抢占/窗口激活验证/fail-safe复位/UIA配额 | `agent.py`、`tools.py`、`executor.py`、`uia_tree.py` |
 
-测试：**230 passed**（`./.venv/Scripts/python.exe -m pytest tests/ -q`，118 → 155 → 230，新增 Jev 快路径/升级/认输/异常降级/词表同源/校准分半等护栏）
+测试：**269 passed**（`./.venv/Scripts/python.exe -m pytest tests/ -q`，118 → 155 → 230 → 269，
+新增右键按住/按钮语义路由的回归）。注意：**单独跑 `tests/test_agent.py` 会因 COM 未 CoInitialize 报
+`WinError -2147221008`**，那是子集执行的顺序问题，全量跑绿——不要当成回归。
 
 ## 关键指标（09-19 首测，mock；原始数据 `assets/bench/`）
 
@@ -66,33 +71,21 @@ mock 域覆盖率不变（0.763）。诚实结论：**今天在真实应用上�
   `scripts/smoke_jev_loop.py`（真桌面 dry-run 冒烟，零鼠标零外发）
 - 报告：`research/desktop-jev/BENCH.md` · 原始 JSON/MD：`assets/bench/`
 
-## 下一步（优先级 A > B > C，等 owner 指示或直接按 A 继续）
+## 下一步（方向已按 §7.3 的负结果修正）
 
-- **A 补数据分布（第一优先级，理由见 BENCH.md §7）**：生成器已写好（`scripts/mock_v3.py`，
-  **元素中位 86 对齐真实 84**——注意这是 2026-09-19 重修后的**诚实**数字，之前的"87"
-  是估算器虚报 + 终端窗口垫高出来的假象，见 BENCH.md §7.2；goal 语义化不照抄控件名 / 中英混排命名），
-  **状态：2026-09-19 14:45 已挂后台跑**（`--episodes 1000 --epochs 2 --idle-gate-s 60
-  --throttle-ms 50`，owner 开着电脑就静默停着、不弹窗；日志 `assets/bench/logs/pipeline_*.log`）。
-  **跑法（owner 离开电脑时，一条命令）**：
-  ```
-  ./.venv/Scripts/python.exe scripts/run_pipeline.py --i-am-away            # 3000 回合 + 3 epoch
-  ./.venv/Scripts/python.exe scripts/run_pipeline.py --i-am-away --episodes 200 --epochs 1  # 小规模验管线
-  ```
-  自动串起：v3 量产（断点续跑）→ 训练（输出到 `checkpoints/v3`，**不覆盖 v0**）→ 校准 →
-  真实域复测 → mock 基准 → 写对照表 `assets/bench/pipeline_<ts>.md`。
-  验收看**真实域** joint_acc / 升级率有没有动（mock 涨了不算数）。
-  再做：学出来的两阶段决策（小打分器把 80+ 元素缩到 ~20 候选；
-  **字符串短名单已证伪**：真实域 recall@10=0%，见 BENCH.md §7）。
-- **B 真 GUI 端到端**：**只能在 owner 离开电脑时跑**。`scripts/bench_gui.py` 已备好
-  （mock 窗口 + 零鼠标执行器 + 真 VisualLoop；`--driver oracle|jev|vlm`；默认拒跑，需 `--allow-gui`；
-  `--offscreen` 自检已过）。首次真窗口运行建议人在旁边。
-- **C 通用性 + 人类基线**（成品标准的两个验收项）：
-  - 人类基线工具已就绪：`scripts/baseline.py --mode human`（交互计时，几分钟）→
-    `--mode agent --i-am-away`（同 goal 同验证器真跑）→ `--mode report`（中位倍数 = 北极星单一数字）。
-    8 个任务覆盖记事本/计算器/资源管理器/浏览器，文件类程序化验证。
-  - 通用性实测：按应用族（浏览器/Office/聊天/文件管理器/IDE）各跑一组可验证任务，
-    记录成功率与升级率。
-- **D 攒真实数据**：日常用 run_task 自然攒 `traces_full`（快路径步标 `source=jev`）。
+- **A 改观测量：让候选元素"可落地"（当前第一优先级）**。
+  真实域 joint 0.17 而 op_acc 0.83 → 动作对、元素错，缺的是元素侧的语义线索。
+  做法：`observation.format_element` 的 tight 格式按预算补 `AutomationId / AcceleratorKey /
+  HelpText / 所属分组标题`（每条都要先量 token 增量，目标是 +2~4 token/元素以内），
+  再用 `scripts/eval_offline.py --data traces_full` 直接在 72 条真实样本上看 joint_acc 有没有动。
+  **离线可验、不用开窗、不用重训**——先用现成 v3 权重当探针，能抬起来再谈重训。
+- **B 改决策形态：学出来的候选压缩**（原 §9.2）。字符串短名单已证伪（recall@10 = 0%），
+  只能学。大表（84–150 元素）先压到 ~20 候选，顺带把 p95 10.3s 打下来。
+- **C 评估口径先修干净**：`traces_full` 现在同时在训练集里（§8.10），
+  想要能对外引用的绝对数，必须训练时不喂它、留作零样本测试集。B/A 的收益都要靠这个口径才能宣称。
+- **D 真 GUI 端到端 + 人类基线**：`scripts/bench_gui.py --allow-gui`、`scripts/baseline.py`
+  ——**只能在 owner 离开电脑时跑**；没有人类基线就不能说"快于人类"。
+- **E 攒真实数据**：日常 run_task 自然攒 `traces_full`，这是 A/C 两项的共同前提。
 
 ## 环境备忘（坑都踩过了）
 
