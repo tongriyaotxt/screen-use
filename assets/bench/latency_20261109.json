@@ -1,0 +1,211 @@
+{
+ "ts": "2026-11-09 19:42:10",
+ "hardware": {
+  "torch": "2.11.0+cu128",
+  "cuda": "12.8",
+  "device": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+  "vram_gb": 11.9,
+  "sm": 46,
+  "bf16_supported": true,
+  "bf16_tflops": 48.1,
+  "bf16_matmul_ms": 2.86,
+  "fp16_tflops": 44.3,
+  "hbm_gbps": 521.0
+ },
+ "perception": {
+  "screenshot": {
+   "n": 10,
+   "mean": 64.13,
+   "p50": 65.51,
+   "p95": 66.59,
+   "max": 66.64
+  },
+  "downscale_1280": {
+   "n": 10,
+   "mean": 15.2,
+   "p50": 13.52,
+   "p95": 20.77,
+   "max": 21.72
+  },
+  "jpeg_b64_80": {
+   "n": 10,
+   "mean": 2.61,
+   "p50": 2.6,
+   "p95": 2.71,
+   "max": 2.72
+  },
+  "capture_for_model": {
+   "n": 10,
+   "mean": 93.39,
+   "p50": 95.37,
+   "p95": 98.02,
+   "max": 99.21
+  },
+  "screen_size": [
+   2560,
+   1600
+  ],
+  "uia_cold": {
+   "n": 5,
+   "mean": 371.6,
+   "p50": 423.4,
+   "p95": 424.87,
+   "max": 425.0
+  },
+  "uia_warm_cached": {
+   "n": 10,
+   "mean": 131.01,
+   "p50": 137.12,
+   "p95": 152.64,
+   "max": 153.94
+  },
+  "uia_force_full": {
+   "n": 5,
+   "mean": 402.14,
+   "p50": 403.14,
+   "p95": 426.73,
+   "max": 431.27
+  },
+  "elements": 24,
+  "uia_timings": {
+   "total_ms": 414.7,
+   "windows_ms": 169.2,
+   "nodes": 296,
+   "n_windows": 2,
+   "budget_ms": 400,
+   "skipped": [
+    "导图1"
+   ],
+   "reused": [],
+   "cache_entries": 2,
+   "state_ms": 10.4,
+   "windows": [
+    {
+     "title": "⠂ 🐋 优化 screen-use 项目开发",
+     "nodes": 37,
+     "elements": 12,
+     "ms": 38.9,
+     "foreground": true,
+     "cut": false
+    },
+    {
+     "title": "文心助手",
+     "nodes": 259,
+     "elements": 12,
+     "ms": 193.5,
+     "foreground": false,
+     "cut": true
+    }
+   ]
+  },
+  "state_ms": 10.4,
+  "annotate_state": {
+   "n": 5,
+   "mean": 7.79,
+   "p50": 7.84,
+   "p95": 8.44,
+   "max": 8.57
+  }
+ },
+ "decision": {
+  "ckpt": "D:\\项目\\01_AI与AGI研发\\RPA-2.0\\checkpoints\\v3\\jev-Qwen3-0.6B-e2",
+  "load_s": 35.9,
+  "device": "cuda",
+  "tau": 0.5,
+  "by_size": [
+   {
+    "elements": 14,
+    "tokens": 285,
+    "decide": {
+     "n": 10,
+     "mean": 51.91,
+     "p50": 47.86,
+     "p95": 76.01,
+     "max": 84.68
+    },
+    "tokenize": {
+     "n": 10,
+     "mean": 0.21,
+     "p50": 0.2,
+     "p95": 0.25,
+     "max": 0.26
+    }
+   },
+   {
+    "elements": 40,
+    "tokens": 796,
+    "decide": {
+     "n": 10,
+     "mean": 87.71,
+     "p50": 85.8,
+     "p95": 97.04,
+     "max": 97.16
+    },
+    "tokenize": {
+     "n": 10,
+     "mean": 1.16,
+     "p50": 1.13,
+     "p95": 1.34,
+     "max": 1.36
+    }
+   },
+   {
+    "elements": 84,
+    "tokens": 1661,
+    "decide": {
+     "n": 10,
+     "mean": 290.52,
+     "p50": 289.84,
+     "p95": 299.5,
+     "max": 301.01
+    },
+    "tokenize": {
+     "n": 10,
+     "mean": 2.22,
+     "p50": 2.17,
+     "p95": 2.44,
+     "max": 2.52
+    }
+   },
+   {
+    "elements": 99,
+    "tokens": 1997,
+    "decide": {
+     "n": 10,
+     "mean": 412.04,
+     "p50": 411.61,
+     "p95": 418.14,
+     "max": 418.65
+    },
+    "tokenize": {
+     "n": 10,
+     "mean": 2.71,
+     "p50": 2.64,
+     "p95": 3.1,
+     "max": 3.24
+    }
+   }
+  ],
+  "backbone_only": {
+   "tokens": 1989,
+   "n": 10,
+   "mean": 4056.97,
+   "p50": 4048.85,
+   "p95": 4099.74,
+   "max": 4103.63
+  },
+  "model_flops_per_token": 1200000000.0
+ },
+ "exec": {
+  "sendinput_move": {
+   "n": 50,
+   "mean": 0.03,
+   "p50": 0.03,
+   "p95": 0.04,
+   "max": 0.05
+  },
+  "pyautogui_pause_s": 0.02,
+  "click_fixed_ms": 60.0,
+  "right_click_fixed_ms": 380.0
+ }
+}

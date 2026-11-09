@@ -37,7 +37,17 @@ _LOW_CONF = 0.3
 
 
 class JevDecision:
-    def __init__(self, ckpt: str | Path, device: str | None = None):
+    def __init__(self, ckpt: str | Path, device: str | None = None,
+                 attn_impl: str | None = "eager", warmup: bool = True):
+        """attn_impl / warmup 是 2026-11-09 的实测加速项（零精度变化）：
+
+        - **attn_impl="eager"**：本机（5070 Ti Laptop, torch 2.11/cu128）上 eager 比
+          sdpa 快 1.5×——1653 token 的前向 285ms → 185ms。Qwen3 的 QK-norm + head_dim=128
+          在这张卡上让 sdpa 走不到快内核，eager 反而走满 cuBLAS。传 None 可恢复默认。
+        - **warmup=True**：加载后先跑一次合成观测，把 CUDA context / cuBLAS handle /
+          分配器池全部预热掉。否则**第一次真决策**要额外吃 1–10s，这正是离线复测里
+          p95 10.3s 的来源（p50 只有 487ms）。
+        """
         ckpt = Path(ckpt)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.tok = build_tokenizer(str(ckpt))
@@ -46,6 +56,13 @@ class JevDecision:
         heads = torch.load(ckpt / "heads.pt", map_location=self.device, weights_only=True)
         self.model.load_state_dict(heads, strict=False)
         self.model.eval()
+        self.attn_impl = attn_impl
+        if attn_impl:
+            try:
+                # 只改 dispatch 用的配置项，不重建模块（transformers 每次 forward 现查）
+                self.model.backbone.config._attn_implementation = attn_impl
+            except Exception:
+                self.attn_impl = None
 
         calib_path = ckpt / "calibration.json"
         self.calib = json.loads(calib_path.read_text()) if calib_path.exists() else {}
@@ -61,7 +78,26 @@ class JevDecision:
         self.goal_tid = self.tok.convert_tokens_to_ids(_GOAL_TAG)
         self.end_goal_tid = self.tok.convert_tokens_to_ids("<|end_goal|>")
 
-    @torch.no_grad()
+        self.warmup_ms: float | None = None
+        if warmup:
+            self.warmup_ms = self._warmup()
+
+    def _warmup(self) -> float:
+        """跑一次最小观测，把 CUDA context / cuBLAS handle / 分配器池预热掉。
+
+        不预热的话第一次真决策要多吃 1–10s（离线复测 p95 10.3s、p50 487ms 的差就是它）。
+        预热失败不算错误：真决策时会再抛一次，行为与原来一致。
+        """
+        t0 = time.perf_counter()
+        try:
+            self.decide("预热", "", [{"id": 1, "name": "OK", "control_type": "ButtonControl",
+                                      "disabled": False, "checked": False,
+                                      "expanded": False, "selected": False}], [])
+        except Exception:  # noqa: BLE001 - 预热是尽力而为
+            pass
+        return (time.perf_counter() - t0) * 1000
+
+    @torch.inference_mode()
     def decide(self, goal: str, foreground: str, elements: list[dict],
                history: list[str]) -> dict:
         t0 = time.perf_counter()
